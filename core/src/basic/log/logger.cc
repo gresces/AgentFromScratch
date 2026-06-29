@@ -63,3 +63,37 @@ void AFS_Logger::output(std::string_view msg) {
     auto out = spdlog::get("afs_output");
     if (out) out->info("{}", msg);
 }
+
+// ---- 事件发布 --------------------------------------------------------------
+
+void AFS_Logger::publishStart() {
+    std::lock_guard lock(events_mutex_);
+    events_.push_back({.type = AgentEvent::Start});
+}
+
+void AFS_Logger::publishAssistantMessage(const std::string& msg_print) {
+    std::lock_guard lock(events_mutex_);
+    events_.push_back({.type = AgentEvent::AssistantMessage, .message_print = msg_print});
+}
+
+void AFS_Logger::publishToolResult(const std::string& msg_print) {
+    std::lock_guard lock(events_mutex_);
+    events_.push_back({.type = AgentEvent::ToolResult, .message_print = msg_print});
+}
+
+void AFS_Logger::publishError(const std::string& error) {
+    std::lock_guard lock(events_mutex_);
+    events_.push_back({.type = AgentEvent::Error, .text = error});
+}
+
+void AFS_Logger::publishComplete(const std::string& reply) {
+    std::lock_guard lock(events_mutex_);
+    events_.push_back({.type = AgentEvent::Complete, .text = reply});
+}
+
+// ---- 事件轮询 --------------------------------------------------------------
+
+std::vector<AgentEvent> AFS_Logger::poll() {
+    std::lock_guard lock(events_mutex_);
+    return std::move(events_);
+}

@@ -24,11 +24,18 @@ Agent 核心节点，程序中的 Agent 之间为树状结构。
 6. 所有 Agent 构造时自动初始化默认上下文（系统提示词），仅由 Agent 自身管理。
 7. 主 Agent（level==0）构造时自动调用 `registerTools()` 注册所有已加载工具插件。
 
+Agent 拥有三个核心组件：
+- `AFS_Loop` — 驱动 LLM 交互和工具调用的状态机。
+- `AFS_Context` — 管理对话消息历史。
+- `AFS_Model` — 执行实际的 LLM API 调用。
+
 ### 接口
 
 | 方法 | 返回 | 说明 |
 |------|------|------|
 | `createMain()` (static) | `std::unique_ptr<AFS_Agent>` | 创建主 Agent，全局仅允许一次，重复返回 `nullptr` |
+| `setModel(model)` | `void` | 设置此 Agent 使用的模型（转移所有权） |
+| `run()` | `std::string` | 运行 Agent 循环，返回最终回复内容 |
 | `genSubNode()` | `AFS_Agent&` | 生成子节点（level + 1），返回非拥有引用 |
 | `killSubNode(AFS_Agent&)` | `void` | 杀死直接子节点及所有后代 |
 | `swapWithChild(self, child)` (static) | `std::unique_ptr<AFS_Agent>` | 将 child 提升到 self 的位置，原 self 成为 child 的子节点。用法: `ptr = AFS_Agent::swapWithChild(std::move(ptr), child)` |
@@ -41,6 +48,7 @@ Agent 核心节点，程序中的 Agent 之间为树状结构。
 | `removeTool(name)` | `void` | 移除已注册的工具 |
 | `toolRegistry()` | `const AFS_ToolRegistry&` | 获取工具注册表 |
 | `context()` | `AFS_Context&` | 获取上下文管理器 |
+| `model()` | `const AFS_Model*` | 获取当前模型（可为 nullptr） |
 | `printMain(root)` (static) | `std::string` | 递归打印以 root 为根的 Agent 树 |
 
 ### `printMain` 输出格式
@@ -77,6 +85,8 @@ Agent 核心节点，程序中的 Agent 之间为树状结构。
 | `sub_agent_nodes_` | `std::vector<std::unique_ptr<AFS_Agent>>` | 子节点列表，独占所有权 |
 | `tool_registry_` | `AFS_ToolRegistry` | 工具注册表，子 Agent 构造时拷贝父级 |
 | `context_` | `AFS_Context` | 上下文管理器，构造时自动初始化默认系统提示词 |
+| `model_` | `std::unique_ptr<AFS_Model>` | 模型实例，通过 `setModel()` 设置 |
+| `loop_` | `AFS_Loop` | 核心循环状态机，驱动 LLM 交互和工具调用 |
 | `loaded_plugins_` | `std::vector<std::pair<AFS::PluginType,std::string>>` | 本 Agent 加载的插件（析构时释放引用） |
 
 ### 私有方法
@@ -144,4 +154,51 @@ main_agent (unique_ptr, 外部持有)
 - `AFS_Agent` 禁止拷贝和赋值（`= delete`）。
 - 构造函数私有，只能通过 `createMain()` 或 `genSubNode()` 创建实例。
 - `genSubNode()` 返回的引用与父节点生命周期绑定，父节点销毁后引用失效。
-- 后续 `AFS_Loop` 将作为 `AFS_Agent` 的成员，驱动单个 Agent 的事件循环。
+- `AFS_Loop` 作为 `AFS_Agent` 的私有成员存在，通过 `run()` 方法调用。
+- `AFS_Model` 通过 `setModel()` 注入，Agent 独占所有权。
+- `AFS_Loop::run()` 仅接收精确依赖：`Context&`、`ToolRegistry&`、`const Model&`、`uuid`。
+- Loop 只管状态机逻辑和请求构建，Context 管消息历史，Agent 管理两者。
+
+## 发布-订阅机制
+
+Loop 发布事件到 `AFS_Logger` 缓冲区，前端通过 `poll()` 定时轮询取出：
+
+```
+Loop::run()                        main.cc / TUI render loop
+  ├── logger.publishStart()        ──→  events_ buffer
+  ├── logger.publishAssistant()    ──→  events_ buffer
+  ├── logger.publishToolResult()   ──→  events_ buffer
+  └── logger.publishComplete()     ──→  events_ buffer
+                                           │
+                                    logger.poll() → vector<AgentEvent>
+                                           │
+                                    renderEvents(events)
+```
+
+事件类型定义在 `core/src/basic/log/logger.hh`：
+
+| 事件 | 字段 |
+|------|------|
+| `Start` | — |
+| `AssistantMessage` | `message_print` — `msg.print()` 字符串 |
+| `ToolResult` | `message_print` — `msg.print()` 字符串 |
+| `Error` | `text` — 错误描述 |
+| `Complete` | `text` — 最终回复 |
+
+发布者（Loop）只 push 到缓冲区，不感知订阅者。订阅者按自己的节奏 `poll()`：
+- 控制台：`run()` 返回后一次性 `poll()` 渲染
+- TUI / GUI：在渲染循环中定时 `poll()`（如每帧一次）
+
+```cpp
+agent.run();
+for (auto& e : AFS_Logger::instance().poll()) {
+    switch (e.type) {
+    case AgentEvent::AssistantMessage:
+    case AgentEvent::ToolResult:
+        if (e.message_print) print(*e.message_print); break;
+    case AgentEvent::Complete:
+        if (!e.text.empty()) print(e.text); break;
+    // ...
+    }
+}
+```

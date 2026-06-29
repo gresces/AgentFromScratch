@@ -1,7 +1,9 @@
 #pragma once
 
+#include "agent/loop/loop.hh"
 #include "agent/tool/tool.hh"
 #include "agent/context/context.hh"
+#include "basic/models/model.hh"
 #include "afs/plugin.hh"
 
 #include <memory>
@@ -19,6 +21,11 @@
 //   5. 子 Agent 继承父 Agent 的已注册工具。
 //   6. 所有 Agent 构造时自动初始化默认上下文（系统提示词），仅由 Agent 自身管理。
 //   7. 主 Agent（level==0）构造时自动调用 registerTools()。
+//
+// Agent 拥有三个核心组件：
+//   - AFS_Loop：   驱动 LLM 交互和工具调用的状态机。
+//   - AFS_Context：管理对话消息历史。
+//   - AFS_Model：  执行实际的 LLM API 调用。
 class AFS_Agent {
   public:
     // ---- lifecycle ----------------------------------------------------------
@@ -28,6 +35,13 @@ class AFS_Agent {
     AFS_Agent& operator=(const AFS_Agent&) = delete;
 
     ~AFS_Agent();
+
+    // ---- execution ----------------------------------------------------------
+    // 设置此 Agent 使用的模型（转移所有权）。
+    void setModel(std::unique_ptr<AFS_Model> model);
+
+    // 运行 Agent 循环：使用当前上下文和模型与 LLM 交互直到获得最终回复。
+    std::string run();
 
     // ---- tree mutation ------------------------------------------------------
     AFS_Agent& genSubNode();
@@ -56,6 +70,7 @@ class AFS_Agent {
     AFS_ToolRegistry& toolRegistry() { return tool_registry_; }
     AFS_Context& context() { return context_; }
     const AFS_Context& context() const { return context_; }
+    const AFS_Model* model() const { return model_.get(); }
 
     // ---- logging ------------------------------------------------------------
 
@@ -79,7 +94,8 @@ class AFS_Agent {
     std::vector<std::unique_ptr<AFS_Agent>> sub_agent_nodes_;
     AFS_ToolRegistry tool_registry_;
     AFS_Context context_;
+    std::unique_ptr<AFS_Model> model_;
+    AFS_Loop loop_;
     // 本 Agent 加载的插件列表（用于析构时释放引用计数）
     std::vector<std::pair<AFS::PluginType, std::string>> loaded_plugins_;
-    // AFS_Loop ...  // 后续接入事件循环
 };

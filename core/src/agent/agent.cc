@@ -196,3 +196,14 @@ void AFS_Agent::fixSubtreeLevels(AFS_Agent& node) {
         fixSubtreeLevels(*child);
     }
 }
+
+// ---- execution -------------------------------------------------------------
+
+void AFS_Agent::setModel(std::unique_ptr<AFS_Model> model) {
+    model_ = std::move(model);
+}
+
+std::string AFS_Agent::run() {
+    if (!model_) return "";
+    return loop_.run(context_, tool_registry_, *model_, uuid_);
+}

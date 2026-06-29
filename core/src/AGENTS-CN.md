@@ -71,6 +71,12 @@ Agent 采用**树状结构**组织。关键规则：
 6. 所有 Agent 构造时自动初始化默认上下文
 7. 主 Agent（`level == 0`）构造时自动调用 `registerTools()`
 
+**Agent 内部组件**：
+- `AFS_Model` — 通过 `setModel()` 注入，Agent 独占所有权。
+- `AFS_Loop` — 私有成员，驱动 LLM ↔ 工具执行的完整循环。
+- `AFS_Context` — 私有成员，管理对话消息历史。
+Loop 仅通过 `run(context_, tool_registry_, *model_, uuid_)` 获取所需资源，运行时事件写入 `AFS_Logger` 缓冲区。
+
 **陷阱**：子 Agent 的上下文由父级显式设置，不自动继承父级消息。
 
 #### agent/context/ — 上下文管理器（AFS_Context）

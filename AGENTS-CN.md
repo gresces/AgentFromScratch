@@ -260,12 +260,22 @@ AFS_PLUGIN_EXPORT void destroyPlugin(AFS::Plugin* p) { delete p; }
               ├── AFS_Config::loadFromFile(config.json)
               ├── AFS_PluginManager::instance() → loadFromDirectory()
               ├── AFS_Agent::createMain() → registerTools()
+              │     └── setModel(createModel(config))
               │     └── AFS_Context (消息历史)
               │     └── AFS_ToolRegistry (工具注册)
+              │     └── AFS_Loop (状态机，私有成员)
               │
-              └── AFS_Loop::run(agent, model)
+              └── agent->run()
+                    └── loop_.run(context_, tool_registry_, *model_, uuid_)
+                         │
+                         ├── logger.publishStart()          → 写入缓冲区
+                         ├── logger.publishAssistantMessage()
+                         ├── logger.publishToolResult()
+                         └── logger.publishComplete(reply)
+                              │
+                         main.cc: logger.poll() → 渲染事件
                     │
-                    ├── [WaitingLLM]  构造请求 → model.chatCompletion()
+                    ├── [WaitingLLM]  buildRequest(ctx, tools, model_name) → model.chatCompletion()
                     ├── [Executing]   解析 tool_calls → registry.execute()
                     └── [Finished]    返回最终回复
 ```

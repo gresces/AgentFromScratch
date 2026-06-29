@@ -2,12 +2,26 @@
 
 #include <spdlog/spdlog.h>
 
+#include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
+
+// ---- AgentEvent -------------------------------------------------------------
+// Agent 运行时事件，发布者 push 到 Logger 缓冲区，订阅者通过 poll() 取出。
+struct AgentEvent {
+    enum Type { Start, AssistantMessage, ToolResult, Error, Complete };
+
+    Type type;
+    std::string text;                                // Error / Complete 的文本
+    std::optional<std::string> message_print;        // AssistantMessage / ToolResult 的 print() 结果
+};
 
 // ---- AFS_Logger --------------------------------------------------------------
-// 全局单例日志管理器。程序启动时最先初始化。
-// 系统日志走 spdlog（带时间戳+级别），用户输出走 stdout。
+// 全局单例日志与事件总线。程序启动时最先初始化。
+// 系统日志走 spdlog（带时间戳+级别），用户输出走 stdout，
+// Agent 运行时事件通过 publish*() 写入缓冲区，订阅者定时 poll() 取出。
 class AFS_Logger {
   public:
     static void init();
@@ -25,8 +39,20 @@ class AFS_Logger {
     // 用户可见输出（stdout，无前缀）
     void output(std::string_view msg);
 
+    // ---- 事件发布（由 Loop 调用，写入缓冲区）------------------------------
+    void publishStart();
+    void publishAssistantMessage(const std::string& msg_print);
+    void publishToolResult(const std::string& msg_print);
+    void publishError(const std::string& error);
+    void publishComplete(const std::string& reply);
+
+    // ---- 事件轮询（订阅者调用，取出并清空缓冲区）--------------------------
+    std::vector<AgentEvent> poll();
+
   private:
     AFS_Logger();
+    std::vector<AgentEvent> events_;
+    std::mutex events_mutex_;
 };
 
 // ---- 日志宏（自动捕获文件/行号）----------------------------------------------

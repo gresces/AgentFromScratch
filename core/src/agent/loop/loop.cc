@@ -53,7 +53,6 @@ static nlohmann::json buildRequest(const AFS_Context& ctx, const std::string& mo
 
     nlohmann::json messages = nlohmann::json::array();
     for (const auto& msg : ctx.messages()) {
-        // 仅保留 system/user/assistant/tool 角色
         nlohmann::json j;
         switch (msg.role) {
         case AFS::Role::System:
@@ -70,7 +69,7 @@ static nlohmann::json buildRequest(const AFS_Context& ctx, const std::string& mo
             j["role"] = "tool";
             break;
         default:
-            continue; // 跳过 developer 等不支持的角色
+            continue;
         }
         j["content"] = msg.content;
         if (msg.name) j["name"] = *msg.name;
@@ -79,7 +78,6 @@ static nlohmann::json buildRequest(const AFS_Context& ctx, const std::string& mo
     }
     request["messages"] = std::move(messages);
 
-    // 附加工具定义
     auto specs = registry.listSpecs();
     if (!specs.empty()) {
         nlohmann::json tools = nlohmann::json::array();
@@ -140,35 +138,40 @@ static std::vector<AFS::Message> runTools(const std::vector<nlohmann::json>& tcs
 
 // ---- 主循环 -----------------------------------------------------------------
 
-std::string AFS_Loop::run(AFS_Agent& agent, AFS_Model& model) {
+std::string AFS_Loop::run(AFS_Context& context, AFS_ToolRegistry& tools,
+                          const AFS_Model& model, const std::string& agent_uuid) {
     LoopData data;
     sml::sm<LoopTable> fsm{data};
+
+    auto& logger = AFS_Logger::instance();
+    logger.publishStart();
     fsm.process_event(start_event{});
 
     unsigned iter = 0;
-    std::string model_id(model.modelName());
 
     while (!fsm.is(sml::state<Finished>) && iter < kMaxIterations) {
 
         if (fsm.is(sml::state<WaitingLLM>)) {
-            auto req = buildRequest(agent.context(), model_id, agent.toolRegistry());
+            auto req = buildRequest(context, model.modelName(), tools);
             auto resp = model.chatCompletion(req);
             if (!resp) {
-                AFS_LOG_ERROR(agent.uuid(), kRoleLoop, "LLM 请求失败");
+                logger.publishError("LLM 请求失败");
+                AFS_LOG_ERROR(agent_uuid, kRoleLoop, "LLM 请求失败");
                 fsm.process_event(give_up{});
                 break;
             }
             data.last_parsed = parseResponse(*resp);
 
-            // 构建 Assistant 消息（含 tool_calls）
-            AFS::Message assistant_msg;
-            assistant_msg.role = AFS::Role::Assistant;
-            assistant_msg.content = data.last_parsed.content;
-            assistant_msg.reasoning_content = data.last_parsed.reasoning;
+            AFS::Message assistant_msg{
+                .role = AFS::Role::Assistant,
+                .content = data.last_parsed.content,
+                .reasoning_content = data.last_parsed.reasoning,
+            };
             if (!data.last_parsed.tool_calls.empty()) {
                 assistant_msg.tool_calls = data.last_parsed.tool_calls;
             }
-            agent.context().addMessage(std::move(assistant_msg));
+            logger.publishAssistantMessage(assistant_msg.print());
+            context.addMessage(std::move(assistant_msg));
 
             if (!data.last_parsed.hasToolCalls()) {
                 return data.last_parsed.content;
@@ -177,19 +180,26 @@ std::string AFS_Loop::run(AFS_Agent& agent, AFS_Model& model) {
         }
 
         if (fsm.is(sml::state<Executing>)) {
-            auto tmsgs = runTools(data.last_parsed.tool_calls, agent.toolRegistry());
-            for (auto& m : tmsgs)
-                agent.context().addMessage(std::move(m));
-            // 工具结果已包含正确的 tool_call_id
+            auto tmsgs = runTools(data.last_parsed.tool_calls, tools);
+            for (auto& m : tmsgs) {
+                logger.publishToolResult(m.print());
+                context.addMessage(std::move(m));
+            }
             ++iter;
             fsm.process_event(tools_done{});
         }
     }
 
-    if (iter >= kMaxIterations) AFS_LOG_ERROR(agent.uuid(), kRoleLoop, "达到最大迭代次数");
+    if (iter >= kMaxIterations) {
+        logger.publishError("达到最大迭代次数");
+        AFS_LOG_ERROR(agent_uuid, kRoleLoop, "达到最大迭代次数");
+    }
 
-    for (auto it = agent.context().messages().rbegin(); it != agent.context().messages().rend();
-         ++it)
-        if (it->role == AFS::Role::Assistant && !it->content.empty()) return it->content;
+    for (auto it = context.messages().rbegin(); it != context.messages().rend(); ++it)
+        if (it->role == AFS::Role::Assistant && !it->content.empty()) {
+            logger.publishComplete(it->content);
+            return it->content;
+        }
+    logger.publishComplete("");
     return "";
 }
