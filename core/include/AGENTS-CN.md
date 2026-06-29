@@ -23,8 +23,8 @@ AFS_PLUGIN_EXPORT AFS::Plugin* createPlugin() { return new MyPlugin(); }
 AFS_PLUGIN_EXPORT void destroyPlugin(AFS::Plugin* p) { delete p; }
 ```
 
-编译: `c++ -std=c++23 -fPIC -shared -I<core/include> -o ToolPluginMy my_plugin.cpp`
-安装: `cp ToolPluginMy bin/plugins/tool/`
+编译: `c++ -std=c++23 -fPIC -shared -I<prefix>/include -o ToolPluginMy my_plugin.cpp`
+安装: `cp ToolPluginMy ${XDG_CONFIG_HOME:-~/.config}/afs/plugins/tool/`
 
 ---
 
@@ -264,13 +264,13 @@ Agent 内部转换为 `ToolSpec` 注册到 `AFS_ToolRegistry`。
 4. 覆写 toolCapabilities() 返回能力列表
 5. 导出三个 C ABI 符号
 6. 编译: c++ -std=c++23 -fPIC -shared ... -o ToolPluginMy
-7. 安装到 bin/plugins/tool/
+7. 安装到 `${XDG_CONFIG_HOME:-~/.config}/afs/plugins/tool/`
 8. Agent 启动时自动加载并注册
 ```
 
 ## 编译
 
-插件开发者只需包含 `core/include/` 目录，无需依赖 `core/src/` 内部头文件。
+插件开发者只需包含 `core/include/` 或 `xmake install` 后的 `<prefix>/include/` 目录，无需依赖 `core/src/` 内部头文件。
 
 ## 约定
 

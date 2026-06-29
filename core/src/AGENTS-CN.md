@@ -7,7 +7,7 @@ Agent 核的源代码目录，按职责分层组织。所有 C++ 代码集中于
 | 目录 | 职责 |
 |------|------|
 | `basic/` | 基础设施模块 |
-| ├─ `config/` | 全局配置（`AFS_Config`、`AFS_ModelConfig`），从 JSON 文件加载 |
+| ├─ `config/` | 全局配置（`AFS_Config`、`AFS_ModelConfig`）与默认用户配置目录路径解析 |
 | ├─ `models/` | 模型抽象与实现（`AFS_Model`、OpenAI 兼容、DeepSeek） |
 | `agent/` | Agent 核心定义与运行循环 |
 | ├─ `agent.hh` / `agent.cc` | Agent 节点：树结构、工具注册、子 Agent 管理 |
@@ -18,6 +18,12 @@ Agent 核的源代码目录，按职责分层组织。所有 C++ 代码集中于
 | `plugins/` | 插件系统实现 |
 | ├─ `plugin_loader.hh` / `plugin_loader.cc` | 动态库加载器：RAII `AFS_LoadedPlugin` |
 | ├─ `plugin_manager.hh` / `plugin_manager.cc` | 全局插件管理器：单例、引用计数、目录批量加载 |
+| `tui/` | FTXUI 终端界面（`AFS_TuiApp`，Agent 前端） |
+| ├─ `app.hh` / `app.cc` | TUI 应用协调层：组装布局、输入事件、Agent 交互子模块；实现 TUI-only Shell 模式 |
+| ├─ `agent/` | TUI ↔ Agent/Logger/Plugin/Model 交互桥接 |
+| ├─ `input/` | TUI Enter/Tab/Esc、modified Enter、键盘/鼠标滚动处理 |
+| ├─ `layout/` | FTXUI 英文状态栏、消息区、输入栏布局和样式 |
+| ├─ `message/` | TUI 消息数据模型（role + content + detail） |
 | `main.cc` | 程序入口 |
 
 ## 文件扩展名约定
@@ -138,7 +144,7 @@ agent.context().addMessage(AFS::AssistantMessage("你好！有什么可以帮助
 
 - **引用计数**：`loadPlugin()` 递增，`unloadPlugin()` 递减，归零时自动卸载
 - **目录批量加载**：`loadFromDirectory(dir)` 预加载目录下所有插件到内存
-- **文件路径约定**：`<dir>/<type>/<Type>Plugin<Name>`，例如 `./plugins/tool/ToolPluginCalculator`
+- **文件路径约定**：`<dir>/<type>/<Type>Plugin<Name>`，例如 `${XDG_CONFIG_HOME:-~/.config}/afs/plugins/tool/ToolPluginCalculator`
 - **能力查询**：`allToolCaps()` 获取所有已加载工具的 `ToolCap` 列表
 
 **陷阱**：插件管理器只管理插件生命周期（加载/卸载），工具的注册/注销由 `AFS_Agent::registerTools()` / `AFS_Agent::removeTool()` 负责。两者解耦。
@@ -158,13 +164,13 @@ agent.context().addMessage(AFS::AssistantMessage("你好！有什么可以帮助
 命令行使用：
 
 ```
-./agent <config.json> <prompt>
+./afs [config.json] [prompt]
 ```
 
 执行流程：
 
-1. 加载 JSON 配置文件（`AFS_Config::loadFromFile`）
-2. 初始化插件管理器，从 `./plugins` 目录批量加载插件
+1. 无参数时使用 `AFS_DefaultConfigPath()`（`${XDG_CONFIG_HOME:-~/.config}/afs/config.json`）并进入 TUI；显式 `config.json` 时加载该文件
+2. 初始化插件管理器，从 `AFS_DefaultPluginDirectory()`（`${XDG_CONFIG_HOME:-~/.config}/afs/plugins/`）批量加载插件
 3. 根据配置创建模型实例（`createModel`）
 4. 创建主 Agent（`AFS_Agent::createMain`），自动注册所有工具
 5. 将命令行 prompt 作为用户消息加入上下文
@@ -189,6 +195,6 @@ main.cc
 ## 注意事项
 
 - **头文件依赖**：`core/src/**/*.cc` 引用 `core/include/afs/` 下的公共头文件（如 `<afs/message.hh>`）。`core/src/` 内部不定义公共类型。
-- **插件 .so 路径**：插件动态库必须放在 `./plugins/` 目录下，`plugin_manager` 按 `<type>/` 子目录查找。
+- **插件 .so 路径**：默认插件目录为 `${XDG_CONFIG_HOME:-~/.config}/afs/plugins/`，`plugin_manager` 按 `<type>/` 子目录查找。
 - **单例生命周期**：`AFS_PluginManager` 是 `shared_ptr` 单例，在 `main()` 结束前不会析构——不要在全局析构阶段访问它。
 - **状态机**：`AFS_Loop` 基于 `boost::sml`，修改循环逻辑前需了解 sml 的事件/状态/转换模型。

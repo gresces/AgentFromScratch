@@ -34,18 +34,44 @@ cd core
 xmake
 ```
 
-编译产物输出到 `bin/Agent`。LSP 辅助文件 `compile_commands.json` 自动生成在 `core/` 目录。
+编译产物输出到 `bin/afs`。LSP 辅助文件 `compile_commands.json` 自动生成在 `core/` 目录。
 
 ### 运行
 
 ```sh
-./bin/Agent <config.json> <prompt>
+./bin/afs                              # TUI 模式，读取 ${XDG_CONFIG_HOME:-~/.config}/afs/config.json
+./bin/afs <config.json>                # TUI 模式，显式配置文件
+./bin/afs <config.json> <prompt>       # 控制台模式，显式配置文件 + 单次问答
 ```
 
-示例：
+TUI 模式默认英文界面；输入栏按 `Tab` 切换 Shell 模式，Shell 命令在当前工作目录通过 `/bin/bash -lc` 执行，结果只显示在 TUI 中，不加入 Agent 上下文。
+插件默认从 `${XDG_CONFIG_HOME:-~/.config}/afs/plugins/` 加载；配置文件默认是 `${XDG_CONFIG_HOME:-~/.config}/afs/config.json`。
+
+### 安装
 
 ```sh
-./bin/Agent test_config.json "What is 2+2?"
+cd core
+
+# 确保没有 afs 进程正在运行（否则安装会报 "file busy"）
+pkill afs || true
+
+sudo xmake install --root
+```
+
+`sudo xmake install --root` 安装：
+- 可执行文件：`/usr/local/bin/afs`；
+- 插件开发公共头文件：`/usr/local/include/afs.hh` 与 `/usr/local/include/afs/*.hh`。
+
+如需安装到其他 prefix：
+
+```sh
+sudo xmake install --root -o /opt/afs
+```
+
+控制台示例：
+
+```sh
+./bin/afs test_config.json "What is 2+2?"
 ```
 
 ### 配置文件格式
@@ -70,7 +96,7 @@ xmake
 ```sh
 cd plugins
 ./build.sh              # 编译全部
-./build.sh install      # 安装到 bin/plugins/
+./build.sh install      # 安装到 ${XDG_CONFIG_HOME:-~/.config}/afs/plugins/
 ```
 
 ## 目录地图
@@ -123,6 +149,12 @@ AgentFromScratch/
 │       │
 │       └── plugins/          ← 插件系统实现
 │           └── AGENTS-CN.md  ← PluginManager、PluginLoader、启动流程
+│       └── tui/              ← FTXUI 终端界面（Agent 前端）
+│           ├── AGENTS-CN.md
+│           ├── agent/        ← Agent 交互桥接
+│           ├── input/        ← Enter/Tab/Esc、modified Enter、滚动
+│           ├── layout/       ← 英文状态栏、消息区、输入栏样式
+│           └── message/      ← TUI 消息模型（role/content/detail）
 │
 ├── plugins/                  ← 插件源码（独立于 core 编译）
 │   ├── AGENTS-CN.md          ← 插件目录说明、编译方法、命名规则
@@ -134,8 +166,11 @@ AgentFromScratch/
 │           └── AGENTS-CN.md
 │
 └── bin/                      ← 编译产物
-    ├── Agent                 ← Agent 核二进制
-    └── plugins/              ← 已安装插件
+    └── afs                   ← 开发构建产物；xmake install 安装到 /usr/local/bin/afs
+
+${XDG_CONFIG_HOME:-~/.config}/afs/
+    ├── config.json           ← 默认配置文件
+    └── plugins/              ← 默认插件目录
         ├── tool/             ← 工具类插件（命名: ToolPlugin<Name>）
         └── skill/            ← 技能类插件（命名: SkillPlugin<Name>）
 ```
@@ -257,8 +292,11 @@ AFS_PLUGIN_EXPORT void destroyPlugin(AFS::Plugin* p) { delete p; }
 ```
 用户输入 → main.cc
               │
+              ├── argc == 1 → AFS_TuiApp::create(default config) → run()
+              ├── argc == 2 → AFS_TuiApp::create(argv[1]) → run()
+              └── argc >= 3 → runConsole(argv[1], argv[2])
               ├── AFS_Config::loadFromFile(config.json)
-              ├── AFS_PluginManager::instance() → loadFromDirectory()
+              ├── AFS_PluginManager::instance() → loadFromDirectory(default plugin dir)
               ├── AFS_Agent::createMain() → registerTools()
               │     └── setModel(createModel(config))
               │     └── AFS_Context (消息历史)
@@ -273,7 +311,9 @@ AFS_PLUGIN_EXPORT void destroyPlugin(AFS::Plugin* p) { delete p; }
                          ├── logger.publishToolResult()
                          └── logger.publishComplete(reply)
                               │
-                         main.cc: logger.poll() → 渲染事件
+                         main.cc / TUI: logger.poll() → 渲染事件
+                              │
+                         TUI Shell 模式：Tab 切换，/bin/bash -lc 执行，不写入上下文
                     │
                     ├── [WaitingLLM]  buildRequest(ctx, tools, model_name) → model.chatCompletion()
                     ├── [Executing]   解析 tool_calls → registry.execute()
@@ -296,6 +336,11 @@ AFS_PLUGIN_EXPORT void destroyPlugin(AFS::Plugin* p) { delete p; }
 | `core/src/agent/context/` | `core/src/agent/context/AGENTS-CN.md` | AFS_Context 上下文管理器 |
 | `core/src/agent/tool/` | `core/src/agent/tool/AGENTS-CN.md` | 工具注册与执行模块 |
 | `core/src/plugins/` | `core/src/plugins/AGENTS-CN.md` | 插件系统（PluginManager、生命周期） |
+| `core/src/tui/` | `core/src/tui/AGENTS-CN.md` | FTXUI 终端界面（TUI 前端） |
+| `core/src/tui/agent/` | `core/src/tui/agent/AGENTS-CN.md` | TUI 与 Agent/Logger/Plugin/Model 的交互桥接 |
+| `core/src/tui/input/` | `core/src/tui/input/AGENTS-CN.md` | TUI Enter/Tab/Esc、modified Enter、滚动处理 |
+| `core/src/tui/layout/` | `core/src/tui/layout/AGENTS-CN.md` | TUI 英文状态栏、消息区、输入栏布局样式 |
+| `core/src/tui/message/` | `core/src/tui/message/AGENTS-CN.md` | TUI 消息模型（role/content/detail） |
 | `plugins/` | `plugins/AGENTS-CN.md` | 插件编译、命名规则、目录结构 |
 | `plugins/tools/bash/` | `plugins/tools/bash/AGENTS-CN.md` | bash 命令执行工具插件文档 |
 | `plugins/tools/compute/` | `plugins/tools/compute/AGENTS-CN.md` | compute 工具插件文档 |

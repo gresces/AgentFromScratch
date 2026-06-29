@@ -61,7 +61,7 @@ cd plugins && ./build.sh compute && ./build.sh compute install
 # 或单独编译
 cd plugins/tools/compute
 ./build.sh          # → ToolPluginCompute
-./build.sh install  # → 安装到 bin/plugins/tool/
+./build.sh install  # → 安装到 ${XDG_CONFIG_HOME:-~/.config}/afs/plugins/tool/
 ./build.sh clean    # 清理
 ```
 

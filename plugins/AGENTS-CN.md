@@ -15,7 +15,7 @@
 cd plugins
 
 ./build.sh              # 编译全部插件
-./build.sh install      # 安装全部到 bin/plugins/<type>/
+./build.sh install      # 安装全部到 ${XDG_CONFIG_HOME:-~/.config}/afs/plugins/<type>/
 ./build.sh clean        # 清理全部
 
 ./build.sh compute      # 仅编译 compute 插件
@@ -25,7 +25,8 @@ cd plugins
 环境变量可覆盖默认值：
 ```sh
 CXX=clang++ CXXFLAGS="-std=c++23 -O3" ./build.sh
-CORE=/path/to/core BIN=/path/to/bin ./build.sh install
+CORE=/path/to/core AFS_CONFIG_DIR=/path/to/config/afs ./build.sh install
+PLUGIN_DIR=/path/to/afs/plugins ./build.sh compute install
 ```
 
 ## 编译流程
@@ -35,10 +36,11 @@ CORE=/path/to/core BIN=/path/to/bin ./build.sh install
   │
   ├── 确定 CORE 路径 (默认 ../core)
   ├── 确定 BIN  路径 (默认 ../bin)
+  ├── 确定 PLUGIN_DIR 路径 (默认 ${XDG_CONFIG_HOME:-~/.config}/afs/plugins)
   ├── 遍历 tools/*/build.sh
   │     └── 每个: cd 到插件目录, bash build.sh
   │           ├── 编译 → <Type>Plugin<Name>
-  │           └── install → 复制到 bin/plugins/<type>/
+  │           └── install → 复制到 $PLUGIN_DIR/<type>/
   └── 完成
 ```
 
@@ -63,7 +65,7 @@ plugins/
         ├── <name>.cpp     ← 插件源码
         └── AGENTS-CN.md   ← 插件文档
 
-bin/
+${XDG_CONFIG_HOME:-~/.config}/afs/
 └── plugins/
     ├── tool/
     │   ├── ToolPluginCompute

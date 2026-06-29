@@ -12,5 +12,5 @@
 ## 约定
 
 - 每个插件子目录必须有 `build.sh`，支持 `build`、`install`、`clean` 子命令。
-- 编译产物命名 `<Type>Plugin<Name>`，无后缀，安装到 `bin/plugins/<type>/`。
+- 编译产物命名 `<Type>Plugin<Name>`，无后缀，安装到 `${XDG_CONFIG_HOME:-~/.config}/afs/plugins/<type>/`。
 - 插件源码仅依赖 `core/include/` 公共头文件。

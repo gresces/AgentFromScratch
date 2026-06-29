@@ -81,7 +81,7 @@ cd plugins && ./build.sh bash && ./build.sh bash install
 # 或单独编译
 cd plugins/tools/bash
 ./build.sh          # → ToolPluginBash
-./build.sh install  # → 安装到 bin/plugins/tool/，并删除本目录临时二进制
+./build.sh install  # → 安装到 ${XDG_CONFIG_HOME:-~/.config}/afs/plugins/tool/，并删除本目录临时二进制
 ./build.sh clean    # 清理
 ```
 

@@ -1,16 +1,17 @@
 #include "basic/log/logger.hh"
 #include "agent/agent.hh"
 #include "basic/config/config.hh"
+#include "basic/config/paths.hh"
 #include "basic/models/model.hh"
 #include "plugins/plugin_manager.hh"
+#include "tui/app.hh"
 
-#include <chrono>
 #include <atomic>
+#include <chrono>
 #include <thread>
 
-// ---- consolePoll -------------------------------------------------------------
-// 从 Logger 事件缓冲区取出全部事件，渲染到终端。
-// 后续 TUI / GUI 前端可在自己的渲染循环中定时调用 logger.poll()。
+// ---- consoleRenderEvents -----------------------------------------------------
+// 从 Logger 事件缓冲区取出全部事件，输出到终端。
 
 static void consoleRenderEvents(AFS_Logger& logger) {
     auto events = logger.poll();
@@ -33,29 +34,19 @@ static void consoleRenderEvents(AFS_Logger& logger) {
     }
 }
 
-// ---- main --------------------------------------------------------------------
+// ---- runConsole --------------------------------------------------------------
+// 控制台模式：接收命令行 prompt，运行 Agent 并实时输出。
 
-int main(int argc, char** argv) {
-    // 程序启动：最先初始化日志
+static int runConsole(const std::string& config_path, const std::string& prompt) {
     AFS_Logger::init();
 
-    if (argc < 3) {
-        AFS_LOG_ERROR(kRoleMain, "", "用法: <config.json> <prompt>");
+    auto config = AFS_Config::loadFromFile(config_path);
+    if (!config || config->models().llms.empty()) {
+        AFS_LOG_ERROR(kRoleMain, "", "无法加载配置或无 LLM 模型");
         return 1;
     }
 
-    auto config = AFS_Config::loadFromFile(argv[1]);
-    if (!config) {
-        AFS_LOG_ERROR(kRoleMain, "", "无法加载配置文件");
-        return 1;
-    }
-    if (config->models().llms.empty()) {
-        AFS_LOG_ERROR(kRoleMain, "", "配置中没有 LLM 模型");
-        return 1;
-    }
-
-    auto pm = AFS_PluginManager::instance();
-    pm->loadFromDirectory("./plugins");
+    AFS_PluginManager::instance()->loadFromDirectory(AFS_DefaultPluginDirectory());
 
     auto agent = AFS_Agent::createMain();
     if (!agent) {
@@ -64,12 +55,10 @@ int main(int argc, char** argv) {
     }
 
     agent->setModel(createModel(config->models().llms[0]));
-    agent->context().addMessage(AFS::UserMessage(argv[2]));
+    agent->context().addMessage(AFS::UserMessage(prompt));
 
-    // 输出初始用户消息
     AFS_Logger::instance().output(agent->context().messages().back().print());
 
-    // 后台线程运行 Agent Loop，主线程轮询 Logger 实时渲染事件
     std::atomic<bool> done{false};
     std::string reply;
     std::thread runner([&]() {
@@ -82,14 +71,31 @@ int main(int argc, char** argv) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
     runner.join();
-
-    // 排空残留事件
     consoleRenderEvents(AFS_Logger::instance());
 
     if (reply.empty()) {
         AFS_LOG_ERROR(kRoleMain, "", "Agent 未返回有效回复");
         return 1;
     }
-
     return 0;
+}
+
+// ---- main --------------------------------------------------------------------
+
+int main(int argc, char** argv) {
+    if (argc == 1) {
+        auto app = AFS_TuiApp::create(AFS_DefaultConfigPath());
+        if (!app) return 1;
+        app->run();
+        return 0;
+    }
+
+    if (argc == 2) {
+        auto app = AFS_TuiApp::create(argv[1]);
+        if (!app) return 1;
+        app->run();
+        return 0;
+    }
+
+    return runConsole(argv[1], argv[2]);
 }

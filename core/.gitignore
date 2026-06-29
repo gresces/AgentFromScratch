@@ -2,3 +2,4 @@
 .cache/
 bin/
 build/
+compile_commands.json

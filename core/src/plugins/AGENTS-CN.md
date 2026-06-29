@@ -56,9 +56,9 @@ Agent 的 `~AFS_Agent()` 已保证此顺序，无需额外处理。
   │
   ├── pm = AFS_PluginManager::instance()
   │
-  ├── pm->loadFromDirectory("./plugins")
-  │     ├── 扫描 plugins/tool/ToolPlugin*
-  │     ├── 扫描 plugins/skill/SkillPlugin*
+  ├── pm->loadFromDirectory(AFS_DefaultPluginDirectory())
+  │     ├── 扫描 ${XDG_CONFIG_HOME:-~/.config}/afs/plugins/tool/ToolPlugin*
+  │     ├── 扫描 ${XDG_CONFIG_HOME:-~/.config}/afs/plugins/skill/SkillPlugin*
   │     └── 每个文件: dlopen → 验证 C ABI → 存储 (ref=1)
   │
   ├── agent = AFS_Agent::createMain()
@@ -90,7 +90,7 @@ Agent 的 `~AFS_Agent()` 已保证此顺序，无需额外处理。
 
 目录结构：
 ```
-bin/plugins/
+${XDG_CONFIG_HOME:-~/.config}/afs/plugins/
 ├── tool/
 │   ├── ToolPluginCompute
 │   └── ToolPluginWeather

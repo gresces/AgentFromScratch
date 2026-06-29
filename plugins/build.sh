@@ -5,6 +5,17 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CORE="${CORE:-$(realpath "$SCRIPT_DIR/../core")}"
 BIN="${BIN:-$(realpath "$SCRIPT_DIR/../bin")}"
 
+if [[ -z "${AFS_CONFIG_DIR:-}" ]]; then
+    if [[ -n "${XDG_CONFIG_HOME:-}" ]]; then
+        AFS_CONFIG_DIR="$XDG_CONFIG_HOME/afs"
+    elif [[ -n "${HOME:-}" ]]; then
+        AFS_CONFIG_DIR="$HOME/.config/afs"
+    else
+        AFS_CONFIG_DIR="$PWD/.config/afs"
+    fi
+fi
+PLUGIN_DIR="${PLUGIN_DIR:-$AFS_CONFIG_DIR/plugins}"
+
 CXX="${CXX:-c++}"
 CXXFLAGS="${CXXFLAGS:--std=c++23 -fPIC -fvisibility=hidden -O2}"
 INCLUDES="-I$CORE/include"
@@ -12,7 +23,7 @@ INCLUDES="-I$CORE/include"
 usage() {
     echo "用法: $0 [all|install|clean] [plugin_name]"
     echo "  $0              # 编译全部插件"
-    echo "  $0 install      # 安装全部插件到 bin/plugins/"
+    echo "  $0 install      # 安装全部插件到 \${XDG_CONFIG_HOME:-~/.config}/afs/plugins/"
     echo "  $0 clean        # 清理全部插件"
     echo "  $0 compute      # 编译指定插件"
     exit 1
@@ -28,7 +39,7 @@ build_one() {
     fi
     echo "=== 编译 $name ==="
     cd "$dir"
-    CORE="$CORE" BIN="$BIN" bash "$build_sh" "${@:2}"
+    CORE="$CORE" BIN="$BIN" AFS_CONFIG_DIR="$AFS_CONFIG_DIR" PLUGIN_DIR="$PLUGIN_DIR" bash "$build_sh" "${@:2}"
     cd "$SCRIPT_DIR"
 }
 

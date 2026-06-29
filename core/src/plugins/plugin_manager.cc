@@ -1,9 +1,7 @@
 #include "plugins/plugin_manager.hh"
 
-#include <algorithm>
 #include <cctype>
 #include <filesystem>
-#include <iostream>
 
 // ---- helpers -----------------------------------------------------------------
 
@@ -59,6 +57,9 @@ std::string AFS_PluginManager::pluginDirName(AFS::PluginType type) const {
 
 void AFS_PluginManager::loadFromDirectory(const std::filesystem::path& dir) {
     plugin_dir_ = dir;
+
+    if (!std::filesystem::exists(dir)) return;
+    if (!std::filesystem::is_directory(dir)) return;
 
     for (const auto& type_dir_entry : std::filesystem::directory_iterator(dir)) {
         if (!type_dir_entry.is_directory()) continue;

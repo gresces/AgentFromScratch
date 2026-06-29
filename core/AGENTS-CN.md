@@ -71,6 +71,19 @@ set_targetdir("$(projectdir)/../bin")
 
 **构建产物**：输出到 `core/../bin/`（即项目根目录下的 `bin/`）。
 
+### 安装
+
+```sh
+cd core
+
+# 确保没有 afs 进程正在运行（否则安装会报 "file busy"）
+pkill afs || true
+
+sudo xmake install --root
+```
+
+`sudo xmake install --root` 安装可执行文件到 `/usr/local/bin/afs`，并安装插件开发公共头文件到 `/usr/local/include/afs.hh` 与 `/usr/local/include/afs/*.hh`。
+
 ### compile_commands.json
 
 通过 xmake 规则 `plugin.compile_commands.autoupdate` **自动生成与更新**。
@@ -142,16 +155,23 @@ xmake clean
 ### 运行
 
 ```bash
-# Agent 二进制位于 bin/
-../bin/Agent <config.json> <prompt>
+# afs 二进制位于 bin/；无参数时读取默认配置并进入 TUI
+../bin/afs
+
+# 显式配置文件：TUI 模式
+../bin/afs <config.json>
+
+# 显式配置文件 + prompt：控制台模式
+../bin/afs <config.json> <prompt>
 
 # 示例
-../bin/Agent ../config.json "What is 2+2? Compute it."
+../bin/afs ../config.json "What is 2+2? Compute it."
 ```
 
 **参数说明**：
-- `config.json`：JSON 配置文件，包含 LLM 模型配置（格式见 `src/basic/config/AGENTS-CN.md`）
-- `prompt`：用户提示词
+- 无参数：读取 `${XDG_CONFIG_HOME:-~/.config}/afs/config.json`，插件从 `${XDG_CONFIG_HOME:-~/.config}/afs/plugins/` 加载，进入 TUI。
+- `config.json`：显式 JSON 配置文件，包含 LLM 模型配置（格式见 `src/basic/config/AGENTS-CN.md`）。
+- `prompt`：用户提示词；提供 prompt 时进入控制台模式。
 
 ### 构建插件
 
@@ -164,7 +184,7 @@ c++ -std=c++23 -fPIC -shared -fvisibility=hidden \
     -o ToolPluginMy
 ```
 
-插件需放入 `bin/plugins/tool/`（工具插件）或 `bin/plugins/skill/`（技能插件），
+插件默认放入 `${XDG_CONFIG_HOME:-~/.config}/afs/plugins/tool/`（工具插件）或 `${XDG_CONFIG_HOME:-~/.config}/afs/plugins/skill/`（技能插件），
 文件命名格式：`<Type>Plugin<Name>`（详见 `src/plugins/AGENTS-CN.md`）。
 
 ### 典型开发工作流
@@ -172,8 +192,8 @@ c++ -std=c++23 -fPIC -shared -fvisibility=hidden \
 ```
 1. 修改源码 (src/*.cc, src/*.hh)
 2. xmake build         ← 增量编译
-3. ../bin/Agent ...    ← 运行验证
-4. （可选）编译/更新插件到 bin/plugins/
+3. ../bin/afs ...      ← 运行验证
+4. （可选）编译/更新插件到 ~/.config/afs/plugins/
 ```
 
 ---

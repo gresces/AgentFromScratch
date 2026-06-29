@@ -1,4 +1,4 @@
-#include "../../../core/include/afs.hh"
+#include <afs.hh>
 
 #include <cstdlib>
 #include <cstring>
@@ -35,7 +35,7 @@ double extractNumber(const std::string& json, const std::string& key) {
 } // namespace
 
 class ComputePlugin final : public AFS::Plugin {
-public:
+  public:
     const char* name() const override { return "compute"; }
     AFS::PluginType type() const override { return AFS::PluginType::Tool; }
     void start() override {}
@@ -71,5 +71,9 @@ public:
 AFS_PLUGIN_EXPORT std::uint32_t pluginAbiVersion() {
     return AFS::PluginAbiVersion;
 }
-AFS_PLUGIN_EXPORT AFS::Plugin* createPlugin() { return new ComputePlugin(); }
-AFS_PLUGIN_EXPORT void destroyPlugin(AFS::Plugin* p) { delete p; }
+AFS_PLUGIN_EXPORT AFS::Plugin* createPlugin() {
+    return new ComputePlugin();
+}
+AFS_PLUGIN_EXPORT void destroyPlugin(AFS::Plugin* p) {
+    delete p;
+}

@@ -4,6 +4,17 @@ set -euo pipefail
 CORE="${CORE:-$(realpath "$(dirname "$0")/../../../core")}"
 BIN="${BIN:-$(realpath "$(dirname "$0")/../../../bin")}"
 
+if [[ -z "${AFS_CONFIG_DIR:-}" ]]; then
+    if [[ -n "${XDG_CONFIG_HOME:-}" ]]; then
+        AFS_CONFIG_DIR="$XDG_CONFIG_HOME/afs"
+    elif [[ -n "${HOME:-}" ]]; then
+        AFS_CONFIG_DIR="$HOME/.config/afs"
+    else
+        AFS_CONFIG_DIR="$PWD/.config/afs"
+    fi
+fi
+PLUGIN_DIR="${PLUGIN_DIR:-$AFS_CONFIG_DIR/plugins}"
+
 NAME="compute"
 TYPE="tool"
 SRC="compute.cpp"
@@ -12,7 +23,7 @@ SRC="compute.cpp"
 capitalize() { echo "$1" | awk '{print toupper(substr($0,1,1)) substr($0,2)}'; }
 OUT="$(capitalize "$TYPE")Plugin$(capitalize "$NAME")"
 
-DEST="$BIN/plugins/$TYPE"
+DEST="$PLUGIN_DIR/$TYPE"
 
 CXX="${CXX:-c++}"
 CXXFLAGS="${CXXFLAGS:--std=c++23 -fPIC -fvisibility=hidden -O2}"
