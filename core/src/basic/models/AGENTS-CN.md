@@ -27,6 +27,7 @@ AFS_Model                         (抽象基类)
 |------|------|------|
 | `modelType()` | `std::string_view` | 模型类型标识，子类覆盖，用于区分协议 |
 | `chatCompletion(request)` | `std::optional<nlohmann::json>` | 聊天补全请求，失败返回 `nullopt` |
+| `chatCompletionStream(request, on_chunk)` | `bool` | SSE 流式聊天补全请求，失败返回 `false` |
 | `embedding(request)` | `std::optional<nlohmann::json>` | 嵌入向量请求，失败返回 `nullopt` |
 | `name()` | `const std::string&` | 模型标识名（来自配置的 `name` 字段） |
 | `modelName()` | `std::string` | API 模型名称（来自配置的 `model` 字段），子类覆盖 |
@@ -37,9 +38,10 @@ AFS_Model                         (抽象基类)
 
 - 构造时从 `AFS_ModelConfig` 深拷贝 `base_url`、`api_key`、`model`。
 - `chatCompletion()` → POST `{base_url}/chat/completions`
+- `chatCompletionStream()` → POST `{base_url}/chat/completions`，强制 `"stream": true`
 - `embedding()` → POST `{base_url}/embeddings`
 - 请求 body 中若未指定 `"model"` 字段，自动填入配置中的 `model` 值。
-- 请求失败（网络错误、非 2xx 状态码、响应非合法 JSON）统一返回 `std::nullopt`。
+- 非流式请求失败（网络错误、非 2xx 状态码、响应非合法 JSON）统一返回 `std::nullopt`；流式请求失败返回 `false`。
 - `base_url_`、`api_key_`、`model_` 为 `protected` 字段，子类可直接访问。
 
 ### `AFS_Model_DeepSeek`
@@ -192,7 +194,8 @@ std::optional<nlohmann::json> postJson(
 - 创建后不可变：不提供任何 setter，拷贝/移动均执行深拷贝（继承自 `AFS_Model` 的拷贝控制）。
 - 调用方不感知底层 HTTP 细节（cpr、Bearer Token 拼接、端点路径），只需构造 request JSON 并处理 response JSON。
 - `chatCompletion` 和 `embedding` 的参数 `request` 为完整 JSON 对象，模型只负责补全缺失的 `"model"` 字段，其余字段（`messages`、`temperature` 等）原样传递。
-- 失败处理：所有失败统一返回 `std::nullopt`，不区分错误类型（网络超时、4xx、5xx、JSON 解析错误）。调用方如需区分错误类型，需扩展返回值设计。
+- `chatCompletionStream` 会补全 `"model"` 并强制设置 `"stream": true`，通过 OpenAI SSE `data:` 事件把每个 JSON chunk 传给回调；回调返回 false 会中止接收。
+- 失败处理：非流式失败返回 `std::nullopt`；流式失败返回 `false`。调用方如需区分错误类型，需扩展返回值设计。
 - 子类化时：`AFS_Model_OpenAICompatible` 的 `protected` 字段（`base_url_`、`api_key_`、`model_`）可直接使用，无需通过 getter。
 
 ## 注意事项
@@ -202,4 +205,4 @@ std::optional<nlohmann::json> postJson(
 - **只返回 JSON 不返回 HTTP 状态码**：当前返回值仅包含解析后的 JSON body。调用方无法区分 "200 但业务错误" 和 "网络超时"——两者都得到 `nullopt`。生产环境如需详细错误信息，需修改接口。
 - **线程安全**：模型实例不可变（所有成员 `const` 语义），`chatCompletion` / `embedding` 方法仅读取成员并发送网络请求，天然线程安全。多个线程可共享同一个 `AFS_Model` 实例。
 - **cpr 超时**：当前未设置 cpr 的超时参数（使用 libcurl 默认超时）。长时间无响应的请求可能阻塞调用线程。后续可考虑增加 `AFS_ModelConfig` 中的超时配置字段。
-- **无流式支持**：当前 `chatCompletion` 返回完整 JSON 响应，不支持 `stream: true` 的分块处理。流式调用需扩展接口。
+- **流式支持边界**：`chatCompletionStream` 支持 OpenAI-compatible SSE chunk；调用方负责解析 `choices[0].delta` 并组装最终消息、tool_calls 和 reasoning。当前未设置 cpr 超时，长时间无响应的流式请求仍可能阻塞调用线程。

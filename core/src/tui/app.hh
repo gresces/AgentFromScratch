@@ -1,13 +1,15 @@
 #pragma once
 
 #include "tui/agent/bridge.hh"
-#include "tui/message/message.hh"
+#include "tui/layout/layout.hh"
 
 #include <atomic>
 #include <memory>
+#include <filesystem>
 #include <mutex>
 #include <string>
 #include <thread>
+#include <set>
 #include <vector>
 
 // ---- AFS_TuiApp --------------------------------------------------------------
@@ -40,11 +42,26 @@ class AFS_TuiApp {
 
     // ---- UI state ------------------------------------------------------------
     std::vector<TuiMessage> messages_;
+    std::vector<AFS_TuiQuickIndexEntry> quick_index_entries_;
+    std::vector<AFS_TuiFileEntry> file_entries_;
+    std::set<std::filesystem::path> expanded_file_dirs_;
+    AFS_TuiSidebarButtons sidebar_buttons_ = {{
+        {AFS_TuiSidebarMode::QuickIndex, "Index", {}},
+        {AFS_TuiSidebarMode::Files, "Files", {}},
+    }};
     std::string input_;
-    int scroll_offset_ = 0;
+    std::string file_candidate_query_;
+    std::filesystem::path config_path_;
+    int file_candidate_index_ = 0;
+    int scroll_position_ = 1000;
     int spinner_frame_ = 0;
     bool esc_pending_ = false;
+    double sidebar_ratio_ = 0.35;
+    bool resizing_sidebar_ = false;
     bool shell_mode_ = false;
+    bool follow_latest_ = true;
+    AFS_TuiSidebarMode sidebar_mode_ = AFS_TuiSidebarMode::QuickIndex;
+    ftxui::Box sidebar_splitter_box_;
     std::atomic<bool> shell_running_{false};
     std::atomic<bool> tui_running_{false};
     std::thread shell_thread_;

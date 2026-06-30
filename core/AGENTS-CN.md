@@ -1,6 +1,6 @@
 # AgentFromScratch — Core（Agent 核心引擎）
 
-Agent 运行时核心，包含 Agent 树管理、LLM 交互循环、工具插件系统、配置与模型抽象。
+Agent 运行时核心，包含 Agent 树管理、LLM 交互循环、工具插件系统、TUI 界面、配置与模型抽象。
 所有源文件位于 `src/`，公共头文件位于 `include/`，构建产物输出到 `../bin/`。
 
 ---
@@ -31,6 +31,7 @@ core/
     ├── basic/                 # 基础设施模块
     │   ├── AGENTS-CN.md
     │   ├── config/            # JSON 配置加载（AFS_Config、AFS_ModelConfig）
+    │   ├── log/               # 全局日志与发布-订阅总线（AFS_Logger）
     │   └── models/            # LLM 模型抽象（OpenAI 兼容协议、DeepSeek）
     │
     ├── agent/                 # Agent 核心定义与运行循环
@@ -44,6 +45,14 @@ core/
     │   ├── AGENTS-CN.md       # 插件发现、加载、引用计数、生命周期
     │   ├── plugin_manager.hh/.cc  # 单例管理器
     │   └── plugin_loader.hh/.cc   # dlopen/dlsym/dlclose RAII 封装
+    │
+    ├── tui/                   # FTXUI 终端界面（Agent 前端）
+    │   ├── AGENTS-CN.md       # TUI 应用协调层、布局、输入处理
+    │   ├── app.hh / .cc       # TUI 主循环、事件轮询、Shell 模式
+    │   ├── agent/             # TUI ↔ Agent/Logger/Plugin/Model 交互桥接
+    │   ├── input/             # Enter/Tab/Esc、modified Enter、滚动处理
+    │   ├── layout/            # 英文状态栏、消息区、输入栏样式
+    │   └── message/           # TUI 消息模型（role/content/detail）
     │
     └── include/               # 内部兼容包装（已迁移至 core/include/，仅保留引用）
 ```
@@ -74,15 +83,12 @@ set_targetdir("$(projectdir)/../bin")
 ### 安装
 
 ```sh
-cd core
-
-# 确保没有 afs 进程正在运行（否则安装会报 "file busy"）
-pkill afs || true
-
-sudo xmake install --root
+cd core && xmake && sudo xmake install --root
 ```
 
 `sudo xmake install --root` 安装可执行文件到 `/usr/local/bin/afs`，并安装插件开发公共头文件到 `/usr/local/include/afs.hh` 与 `/usr/local/include/afs/*.hh`。
+
+> 或使用项目顶层的一键安装脚本：`./install.sh`（核心需 root，插件无需）
 
 ### compile_commands.json
 
@@ -107,7 +113,7 @@ Checks: "-unused-includes"
 | 依赖 | 版本 | 用途 | 使用位置 |
 |------|------|------|---------|
 | `nlohmann_json` | — | JSON 解析与构造 | 配置加载、模型请求/响应、工具参数 |
-| `ftxui` | v6.1.9 | TUI 终端界面（预留） | 待集成 |
+| `ftxui` | v6.1.9 | TUI 终端界面 | `src/tui/` |
 | `boost_sml` | v1.1.13 | C++ 状态机 | Agent 主循环（`loop/`） |
 | `taskflow` | v4.0.0 | 并行任务编排（预留） | 待集成 |
 | `cpr` | v1.14.2 | HTTP 客户端（封装 libcurl） | 模型 API 调用（`basic/models/`） |
@@ -220,10 +226,16 @@ c++ -std=c++23 -fPIC -shared -fvisibility=hidden \
 | `include/AGENTS-CN.md` | 公共 API 完整文档：消息类型、插件接口、使用示例 |
 | `src/AGENTS-CN.md` | 源码目录概览与通用约定 |
 | `src/basic/AGENTS-CN.md` | 基础设施模块导航 |
-| `src/basic/config/AGENTS-CN.md` | 配置加载、JSON 格式 |
-| `src/basic/models/AGENTS-CN.md` | 模型抽象、HTTP 请求、工厂函数 |
+| `src/basic/config/AGENTS-CN.md` | 配置加载、JSON 格式、默认路径解析 |
+| `src/basic/log/AGENTS-CN.md` | 全局日志、发布-订阅总线、事件类型 |
+| `src/basic/models/AGENTS-CN.md` | 模型抽象、HTTP 请求、流式支持、工厂函数 |
 | `src/agent/AGENTS-CN.md` | Agent 树结构、所有权模型、生命周期 |
 | `src/agent/context/AGENTS-CN.md` | 对话上下文管理 |
-| `src/agent/loop/AGENTS-CN.md` | 状态机循环、LLM 交互 |
+| `src/agent/loop/AGENTS-CN.md` | 状态机循环、流式 LLM 交互 |
 | `src/agent/tool/AGENTS-CN.md` | 工具注册与执行 |
 | `src/plugins/AGENTS-CN.md` | 插件系统、引用计数、销毁顺序 |
+| `src/tui/AGENTS-CN.md` | TUI 应用层：布局、输入、滚动、Shell 模式 |
+| `src/tui/agent/AGENTS-CN.md` | TUI ↔ Agent/Logger 交互桥接 |
+| `src/tui/input/AGENTS-CN.md` | TUI 键盘/鼠标输入与滚动处理 |
+| `src/tui/layout/AGENTS-CN.md` | TUI 布局、着色、样式 |
+| `src/tui/message/AGENTS-CN.md` | TUI 消息数据模型 |

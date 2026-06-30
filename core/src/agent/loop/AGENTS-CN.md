@@ -51,10 +51,12 @@ Agent::run()
   │
   ├── 状态: WaitingLLM
   │     ├── buildRequest(context, model_name, tools) → 请求 JSON
-  │     ├── model.chatCompletion(request)
-  │     ├── 解析响应 → 提取 content + tool_calls
-  │     ├── logger.publishAssistantMessage(msg.print())  → 缓冲区
-  │     ├── context.addMessage(AssistantMessage + tool_calls)
+  │     ├── 优先 model.chatCompletionStream(request) 接收 SSE chunk
+  │     ├── 流式失败且未输出 delta → 回退 model.chatCompletion(request)
+  │     ├── 解析响应/delta → 提取 reasoning + content + tool_calls
+  │     ├── logger.publishReasoning*()  → TUI dim 思考段
+  │     ├── logger.publishAssistant*()  → TUI 正文/流式正文
+  │     ├── context.addMessage(AssistantMessage + reasoning + tool_calls)
   │     ├── 无工具调用 → 返回 content
   │     └── 有工具调用 → 状态 → Executing
   │
@@ -75,7 +77,7 @@ Agent::run()
 | `AFS_Agent` | 拥有 Loop、Context、Model；通过 `run()` 传递四个资源给 Loop |
 | `AFS_Loop` | 纯状态机：WaitingLLM ↔ Executing，调度 LLM 调用和工具执行 |
 | `AFS_Context` | 纯消息存储：累积对话历史 |
-| `AFS_Model` | 纯 LLM 调用：chatCompletion |
+| `AFS_Model` | 纯 LLM 调用：`chatCompletionStream` / `chatCompletion` |
 
 ## 请求格式
 
@@ -113,6 +115,8 @@ LLM 返回的 tool_calls：
 }
 ```
 
+
+`reasoning_content` 是 DeepSeek thinking 模式的上下文字段。若 Assistant 历史消息包含该字段，`buildRequest()` 必须原样写回请求 JSON；否则后续带工具结果的请求会被 DeepSeek 拒绝。
 工具执行后，ToolMessage 追加到上下文：
 ```
 [Tool call_id=call_123] {"result": 8}

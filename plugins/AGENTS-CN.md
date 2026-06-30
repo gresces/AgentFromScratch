@@ -20,6 +20,7 @@ cd plugins
 
 ./build.sh compute      # 仅编译 compute 插件
 ./build.sh compute install  # 编译并安装 compute
+./build.sh file install     # 编译并安装 file
 ```
 
 环境变量可覆盖默认值：
@@ -63,12 +64,13 @@ plugins/
     └── <name>/
         ├── build.sh       ← 单插件编译脚本
         ├── <name>.cpp     ← 插件源码
-        └── AGENTS-CN.md   ← 插件文档
+        └── AGENTS-CN.md   ← 插件文档（参考 tools/file/AGENTS-CN.md）
 
 ${XDG_CONFIG_HOME:-~/.config}/afs/
 └── plugins/
     ├── tool/
     │   ├── ToolPluginCompute
+    │   ├── ToolPluginFile
     │   └── ToolPluginWeather
     └── skill/
         └── ...

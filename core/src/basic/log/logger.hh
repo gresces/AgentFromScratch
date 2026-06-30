@@ -11,11 +11,20 @@
 // ---- AgentEvent -------------------------------------------------------------
 // Agent 运行时事件，发布者 push 到 Logger 缓冲区，订阅者通过 poll() 取出。
 struct AgentEvent {
-    enum Type { Start, AssistantMessage, ToolResult, Error, Complete };
+    enum Type {
+        Start,
+        AssistantMessage,
+        AssistantDelta,
+        ReasoningMessage,
+        ReasoningDelta,
+        ToolResult,
+        Error,
+        Complete,
+    };
 
     Type type;
-    std::string text;                                // Error / Complete 的文本
-    std::optional<std::string> message_print;        // AssistantMessage / ToolResult 的 print() 结果
+    std::string text;                         // Error / Complete 的文本
+    std::optional<std::string> message_print; // AssistantMessage / ToolResult 的 print() 结果
 };
 
 // ---- AFS_Logger --------------------------------------------------------------
@@ -42,6 +51,9 @@ class AFS_Logger {
     // ---- 事件发布（由 Loop 调用，写入缓冲区）------------------------------
     void publishStart();
     void publishAssistantMessage(const std::string& msg_print);
+    void publishAssistantDelta(const std::string& delta);
+    void publishReasoningMessage(const std::string& reasoning);
+    void publishReasoningDelta(const std::string& delta);
     void publishToolResult(const std::string& msg_print);
     void publishError(const std::string& error);
     void publishComplete(const std::string& reply);

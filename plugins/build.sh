@@ -21,11 +21,13 @@ CXXFLAGS="${CXXFLAGS:--std=c++23 -fPIC -fvisibility=hidden -O2}"
 INCLUDES="-I$CORE/include"
 
 usage() {
-    echo "用法: $0 [all|install|clean] [plugin_name]"
-    echo "  $0              # 编译全部插件"
-    echo "  $0 install      # 安装全部插件到 \${XDG_CONFIG_HOME:-~/.config}/afs/plugins/"
-    echo "  $0 clean        # 清理全部插件"
-    echo "  $0 compute      # 编译指定插件"
+    echo "用法: $0 [all|install|clean|plugin_name] [build|install|clean]"
+    echo "  $0                  # 编译全部插件"
+    echo "  $0 install          # 编译并安装全部插件到 $PLUGIN_DIR"
+    echo "  $0 clean            # 清理全部插件"
+    echo "  $0 <plugin>         # 编译指定插件"
+    echo "  $0 <plugin> install # 编译并安装指定插件"
+    echo "  $0 <plugin> clean   # 清理指定插件"
     exit 1
 }
 
@@ -37,9 +39,10 @@ build_one() {
         echo "错误: 未找到 $name 插件 ($build_sh)"
         return 1
     fi
-    echo "=== 编译 $name ==="
+    echo "=== $name ==="
     cd "$dir"
-    CORE="$CORE" BIN="$BIN" AFS_CONFIG_DIR="$AFS_CONFIG_DIR" PLUGIN_DIR="$PLUGIN_DIR" bash "$build_sh" "${@:2}"
+    CORE="$CORE" BIN="$BIN" AFS_CONFIG_DIR="$AFS_CONFIG_DIR" PLUGIN_DIR="$PLUGIN_DIR" \
+        bash "$build_sh" "${@:2}"
     cd "$SCRIPT_DIR"
 }
 
@@ -47,7 +50,8 @@ build_all() {
     local cmd="${1:-build}"
     local found=0
     for dir in "$SCRIPT_DIR"/tools/*/; do
-        local name=$(basename "$dir")
+        local name
+        name=$(basename "$dir")
         if [[ -f "$dir/build.sh" ]]; then
             build_one "$name" "$cmd"
             found=1
@@ -55,6 +59,14 @@ build_all() {
     done
     if [[ $found -eq 0 ]]; then
         echo "未发现任何插件 (tools/*/build.sh)"
+        return
+    fi
+    if [[ "$cmd" == "install" ]]; then
+        echo ""
+        echo "=== 安装完成 ==="
+        echo "插件已安装到 $PLUGIN_DIR"
+        ls -la "$PLUGIN_DIR"/tool/ 2>/dev/null || true
+        ls -la "$PLUGIN_DIR"/skill/ 2>/dev/null || true
     fi
 }
 

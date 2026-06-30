@@ -50,9 +50,13 @@ pollMessages()
 ## 事件转换约定
 
 - `AgentEvent::AssistantMessage`：移除 `Message::print()` 生成的 `[assistant] ` 前缀，生成 `TuiMessage::Assistant`。
+- `AgentEvent::AssistantDelta`：生成 `TuiMessage::Assistant`，`append = true`，由 `app.cc` 合并到上一条 Assistant。
+- `AgentEvent::ReasoningMessage`：生成 `TuiMessage::Thinking`，用于 dim 思考段。
+- `AgentEvent::ReasoningDelta`：生成 `TuiMessage::Thinking`，`append = true`，由 `app.cc` 合并到上一条 Thinking。
 - `AgentEvent::ToolResult`：解析 `Message::print()` 生成的 `[tool call_id=...] ` 前缀：
   - `call_id=...` 写入 `TuiMessage::detail`；
   - `] ` 之后的 JSON / 输出写入 `TuiMessage::content`。
+  - 若正文是 JSON，桥接层会先解析再展示；字符串字段中的 `\n`、`\t` 等转义显示为真实换行/制表效果。
 - `AgentEvent::Error`：生成英文 `[error] ...` Assistant 消息。
 - `AgentEvent::Complete`：生成 Assistant 消息。
 - TUI 用户可见错误文案保持英文。

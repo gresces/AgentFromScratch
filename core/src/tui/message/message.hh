@@ -4,9 +4,10 @@
 
 // ---- TuiMessage -------------------------------------------------------------
 struct TuiMessage {
-    enum Role { User, Assistant, Tool, Shell };
+    enum Role { User, Assistant, Thinking, Tool, Shell };
 
     Role role;
     std::string content;
     std::string detail;
+    bool append = false;
 };

@@ -24,11 +24,16 @@
 | `log(lvl, agent, role, msg)` | 不带文件位置的日志 |
 | `output(msg)` | 用户可见输出 |
 | `publishStart()` | 写入 Start 事件到缓冲区 |
-| `publishAssistantMessage(msg_print)` | 写入 AssistantMessage 事件 |
+| `publishAssistantMessage(msg_print)` | 写入完整 AssistantMessage 事件 |
+| `publishAssistantDelta(delta)` | 写入流式 AssistantDelta 事件 |
+| `publishReasoningMessage(reasoning)` | 写入完整 ReasoningMessage 事件 |
+| `publishReasoningDelta(delta)` | 写入流式 ReasoningDelta 事件 |
 | `publishToolResult(msg_print)` | 写入 ToolResult 事件 |
 | `publishError(err)` | 写入 Error 事件 |
 | `publishComplete(reply)` | 写入 Complete 事件 |
 | `poll()` | 取出并清空全部缓冲事件 |
+
+`AssistantDelta` / `ReasoningDelta` 由 TUI 合并到上一条同角色消息，用于流式渲染；`Reasoning*` 事件在 TUI 中以 `Thinking` 角色显示，并使用 dim 样式。
 
 ## 事件轮询
 
@@ -44,6 +49,10 @@ for (const auto& e : events) {
     case AgentEvent::AssistantMessage:
     case AgentEvent::ToolResult:
         if (e.message_print) AFS_Logger::instance().output(*e.message_print);
+        break;
+    case AgentEvent::AssistantDelta:
+    case AgentEvent::ReasoningDelta:
+        // 控制台可直接按 delta 输出并 flush；TUI 则合并到上一条消息。
         break;
     case AgentEvent::Complete:
         if (!e.text.empty()) AFS_Logger::instance().output("\n" + e.text);

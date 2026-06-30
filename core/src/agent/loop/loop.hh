@@ -23,8 +23,8 @@ class AFS_Loop {
     //   model   — LLM 模型，用于 chatCompletion 调用
     //   agent_uuid — 用于日志标识（也用于 Logger 日志）
     // 返回最终回复内容，失败时返回空字符串。
-    std::string run(AFS_Context& context, AFS_ToolRegistry& tools,
-                    const AFS_Model& model, const std::string& agent_uuid);
+    std::string run(AFS_Context& context, AFS_ToolRegistry& tools, const AFS_Model& model,
+                    const std::string& agent_uuid);
 
     // 解析 LLM 响应，提取文本内容和工具调用
     struct ParsedResponse {

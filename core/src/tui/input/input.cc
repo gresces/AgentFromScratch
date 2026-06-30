@@ -1,80 +1,106 @@
 #include "tui/input/input.hh"
 
 #include <algorithm>
-#include <initializer_list>
 #include <string_view>
 
 using namespace ftxui;
 
 namespace {
 
-bool matchesAny(std::string_view input, std::initializer_list<std::string_view> candidates) {
-    for (std::string_view candidate : candidates) {
-        if (input == candidate) return true;
+constexpr int kScrollTop = 0;
+constexpr int kScrollBottom = 1000;
+constexpr int kWheelScrollStep = 30;
+
+// ---- signalMatches -----------------------------------------------------------
+bool signalMatches(AFS_TuiKeySignal signal, const Event& event) {
+    switch (signal) {
+    case AFS_TuiKeySignal::Escape:
+        return event == Event::Escape;
+    case AFS_TuiKeySignal::Return:
+        return event == Event::Return;
+    case AFS_TuiKeySignal::Tab:
+        return event == Event::Tab;
+    case AFS_TuiKeySignal::Backspace:
+        return event == Event::Backspace;
+    case AFS_TuiKeySignal::Delete:
+        return event == Event::Delete;
+    case AFS_TuiKeySignal::ArrowLeft:
+        return event == Event::ArrowLeft;
+    case AFS_TuiKeySignal::ArrowRight:
+        return event == Event::ArrowRight;
+    case AFS_TuiKeySignal::ArrowUp:
+        return event == Event::ArrowUp;
+    case AFS_TuiKeySignal::ArrowDown:
+        return event == Event::ArrowDown;
+    case AFS_TuiKeySignal::PageUp:
+        return event == Event::PageUp;
+    case AFS_TuiKeySignal::PageDown:
+        return event == Event::PageDown;
+    case AFS_TuiKeySignal::Home:
+        return event == Event::Home;
+    case AFS_TuiKeySignal::End:
+        return event == Event::End;
+    case AFS_TuiKeySignal::Sequence:
+        return false;
     }
     return false;
 }
 
+// ---- bindingMatches ----------------------------------------------------------
+bool bindingMatches(const AFS_TuiKeyBinding& binding, const Event& event) {
+    if (binding.signal == AFS_TuiKeySignal::Sequence) {
+        return std::string_view(event.input()) == binding.sequence;
+    }
+    return signalMatches(binding.signal, event);
+}
+
+// ---- adjustScrollPosition ----------------------------------------------------
+void adjustScrollPosition(int delta, int& scroll_position, bool& follow_latest) {
+    scroll_position = std::clamp(scroll_position + delta, kScrollTop, kScrollBottom);
+    follow_latest = scroll_position == kScrollBottom;
+}
+
 } // namespace
 
-bool AFS_TuiIsMultilineShortcut(const Event& event) {
-    // Plain Enter is Event::Return / Event::CtrlJ (both are LF in FTXUI). Do not
-    // match LF here: it is reserved for submit, and Ctrl+J must not be treated as
-    // the multiline shortcut.
-    const std::string& input = event.input();
+std::optional<AFS_TuiKeyActionEvent> AFS_TuiResolveKeyAction(const Event& event) {
+    for (const auto& binding : AFS_TuiKeyBindings) {
+        if (!bindingMatches(binding, event)) continue;
+        return AFS_TuiKeyActionEvent{
+            .action = binding.action,
+            .scroll_delta = binding.scroll_delta,
+            .cancels_exit_confirmation = binding.cancels_exit_confirmation,
+        };
+    }
+    return std::nullopt;
+}
 
-    // CSI-u / kitty keyboard protocol / modern xterm modifyOtherKeys:
-    //   ESC [ 13 ; 2 u  -> Shift+Enter
-    //   ESC [ 13 ; 5 u  -> Ctrl+Enter
-    //   ESC [ 13 ; 6 u  -> Ctrl+Shift+Enter
-    // Some terminals use the legacy modifyOtherKeys form:
-    //   ESC [ 27 ; <modifier> ; 13 ~
-    return matchesAny(input, {
-        "\x1B[13;2u",
-        "\x1B[13;5u",
-        "\x1B[13;6u",
-        "\x1B[27;2;13~",
-        "\x1B[27;5;13~",
-        "\x1B[27;6;13~",
-    });
+bool AFS_TuiIsMultilineShortcut(const Event& event) {
+    auto action = AFS_TuiResolveKeyAction(event);
+    return action.has_value() && action->action == AFS_TuiKeyAction::InsertNewline;
 }
 
 bool AFS_TuiCancelsExitConfirmation(const Event& event) {
-    return event.is_character() || event == Event::Return || event == Event::Backspace
-           || event == Event::Delete || event == Event::ArrowLeft || event == Event::ArrowRight
-           || event == Event::Home || event == Event::End || event == Event::Tab
-           || AFS_TuiIsMultilineShortcut(event);
+    auto action = AFS_TuiResolveKeyAction(event);
+    return event.is_character() || (action.has_value() && action->cancels_exit_confirmation);
 }
 
-bool AFS_TuiHandleScrollEvent(Event event, int total_messages, int& scroll_offset) {
+bool AFS_TuiHandleScrollEvent(Event event, int& scroll_position, bool& follow_latest) {
     if (event.is_mouse()) {
         auto& mouse = event.mouse();
         if (mouse.button == Mouse::WheelUp) {
-            if (scroll_offset > 0) --scroll_offset;
+            adjustScrollPosition(-kWheelScrollStep, scroll_position, follow_latest);
             return true;
         }
         if (mouse.button == Mouse::WheelDown) {
-            if (total_messages > 0 && scroll_offset < total_messages - 1) ++scroll_offset;
+            adjustScrollPosition(kWheelScrollStep, scroll_position, follow_latest);
             return true;
         }
         return false;
     }
 
-    if (event != Event::ArrowUp && event != Event::ArrowDown && event != Event::PageUp
-        && event != Event::PageDown) {
-        return false;
-    }
+    auto action = AFS_TuiResolveKeyAction(event);
+    if (!action.has_value() || action->action != AFS_TuiKeyAction::Scroll) return false;
 
-    if (total_messages == 0) return false;
-
-    if (event == Event::ArrowUp) {
-        if (scroll_offset > 0) --scroll_offset;
-    } else if (event == Event::ArrowDown) {
-        if (scroll_offset < total_messages - 1) ++scroll_offset;
-    } else if (event == Event::PageUp) {
-        scroll_offset = std::max(0, scroll_offset - 10);
-    } else if (event == Event::PageDown) {
-        scroll_offset = std::min(total_messages - 1, scroll_offset + 10);
-    }
+    adjustScrollPosition(action->scroll_delta, scroll_position, follow_latest);
     return true;
 }

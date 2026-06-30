@@ -76,6 +76,21 @@ void AFS_Logger::publishAssistantMessage(const std::string& msg_print) {
     events_.push_back({.type = AgentEvent::AssistantMessage, .message_print = msg_print});
 }
 
+void AFS_Logger::publishAssistantDelta(const std::string& delta) {
+    std::lock_guard lock(events_mutex_);
+    events_.push_back({.type = AgentEvent::AssistantDelta, .text = delta});
+}
+
+void AFS_Logger::publishReasoningMessage(const std::string& reasoning) {
+    std::lock_guard lock(events_mutex_);
+    events_.push_back({.type = AgentEvent::ReasoningMessage, .text = reasoning});
+}
+
+void AFS_Logger::publishReasoningDelta(const std::string& delta) {
+    std::lock_guard lock(events_mutex_);
+    events_.push_back({.type = AgentEvent::ReasoningDelta, .text = delta});
+}
+
 void AFS_Logger::publishToolResult(const std::string& msg_print) {
     std::lock_guard lock(events_mutex_);
     events_.push_back({.type = AgentEvent::ToolResult, .message_print = msg_print});

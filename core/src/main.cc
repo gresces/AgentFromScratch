@@ -6,10 +6,60 @@
 #include "plugins/plugin_manager.hh"
 #include "tui/app.hh"
 
+#include <nlohmann/json.hpp>
+
 #include <atomic>
 #include <chrono>
 #include <thread>
+#include <iostream>
 
+namespace {
+
+std::string formatJsonValueForConsole(const nlohmann::json& value);
+
+std::string formatJsonObjectForConsole(const nlohmann::json& object) {
+    std::string output;
+    bool first = true;
+    for (const auto& [key, value] : object.items()) {
+        if (!first) output += "\n";
+        output += key + ": ";
+        std::string rendered = formatJsonValueForConsole(value);
+        if (value.is_string() && rendered.find('\n') != std::string::npos) output += "\n";
+        output += rendered;
+        first = false;
+    }
+    return output;
+}
+
+std::string formatJsonValueForConsole(const nlohmann::json& value) {
+    if (value.is_string()) return value.get<std::string>();
+    if (value.is_object()) return formatJsonObjectForConsole(value);
+    if (value.is_array()) {
+        std::string output;
+        for (size_t i = 0; i < value.size(); ++i) {
+            if (i > 0) output += "\n";
+            output += "- " + formatJsonValueForConsole(value[i]);
+        }
+        return output;
+    }
+    return value.dump();
+}
+
+std::string formatToolMessageForConsole(const std::string& message) {
+    constexpr std::string_view prefix = "[tool ";
+    auto end = message.find("] ", prefix.size());
+    if (!message.starts_with(prefix) || end == std::string::npos) return message;
+
+    std::string content = message.substr(end + 2);
+    try {
+        content = formatJsonValueForConsole(nlohmann::json::parse(content));
+    } catch (const nlohmann::json::parse_error&) {
+    }
+
+    return message.substr(0, end + 1) + "\n" + content;
+}
+
+} // namespace
 // ---- consoleRenderEvents -----------------------------------------------------
 // 从 Logger 事件缓冲区取出全部事件，输出到终端。
 
@@ -21,8 +71,19 @@ static void consoleRenderEvents(AFS_Logger& logger) {
             logger.output("");
             break;
         case AgentEvent::AssistantMessage:
-        case AgentEvent::ToolResult:
             if (e.message_print) logger.output(*e.message_print);
+            break;
+        case AgentEvent::ToolResult:
+            if (e.message_print) logger.output(formatToolMessageForConsole(*e.message_print));
+            break;
+        case AgentEvent::AssistantDelta:
+            std::cout << e.text << std::flush;
+            break;
+        case AgentEvent::ReasoningMessage:
+            if (!e.text.empty()) logger.output("\033[2m" + e.text + "\033[0m");
+            break;
+        case AgentEvent::ReasoningDelta:
+            std::cout << "\033[2m" << e.text << "\033[0m" << std::flush;
             break;
         case AgentEvent::Error:
             AFS_LOG_ERROR(kRoleMain, "", e.text);

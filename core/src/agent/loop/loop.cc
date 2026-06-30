@@ -42,6 +42,19 @@ struct LoopTable {
     }
 };
 
+struct StreamToolCall {
+    std::string id;
+    std::string type;
+    std::string name;
+    std::string arguments;
+};
+
+struct StreamResult {
+    bool ok = false;
+    bool emitted = false;
+    AFS_Loop::ParsedResponse parsed;
+};
+
 } // namespace
 
 // ---- 请求构建 ---------------------------------------------------------------
@@ -64,6 +77,7 @@ static nlohmann::json buildRequest(const AFS_Context& ctx, const std::string& mo
         case AFS::Role::Assistant:
             j["role"] = "assistant";
             if (msg.tool_calls.has_value()) j["tool_calls"] = *msg.tool_calls;
+            if (!msg.reasoning_content.empty()) j["reasoning_content"] = msg.reasoning_content;
             break;
         case AFS::Role::Tool:
             j["role"] = "tool";
@@ -113,6 +127,87 @@ static AFS_Loop::ParsedResponse parseResponse(const nlohmann::json& response) {
     return pr;
 }
 
+static void appendStringField(const nlohmann::json& object, const char* key, std::string& target) {
+    if (object.contains(key) && !object[key].is_null()) {
+        target += object[key].get<std::string>();
+    }
+}
+
+static void assignStringField(const nlohmann::json& object, const char* key, std::string& target) {
+    if (object.contains(key) && !object[key].is_null()) {
+        target = object[key].get<std::string>();
+    }
+}
+
+static nlohmann::json buildToolCallJson(const StreamToolCall& call) {
+    nlohmann::json tool_call;
+    tool_call["id"] = call.id;
+    tool_call["type"] = call.type.empty() ? "function" : call.type;
+    tool_call["function"] = {
+        {"name", call.name},
+        {"arguments", call.arguments},
+    };
+    return tool_call;
+}
+
+static void appendToolCallDelta(const nlohmann::json& delta,
+                                std::vector<StreamToolCall>& tool_calls) {
+    if (!delta.contains("tool_calls") || !delta["tool_calls"].is_array()) return;
+
+    for (const auto& tool_delta : delta["tool_calls"]) {
+        size_t index = tool_delta.value("index", tool_calls.size());
+        if (index >= tool_calls.size()) tool_calls.resize(index + 1);
+
+        auto& call = tool_calls[index];
+        assignStringField(tool_delta, "id", call.id);
+        assignStringField(tool_delta, "type", call.type);
+
+        if (!tool_delta.contains("function") || !tool_delta["function"].is_object()) continue;
+        const auto& function = tool_delta["function"];
+        assignStringField(function, "name", call.name);
+        appendStringField(function, "arguments", call.arguments);
+    }
+}
+
+static StreamResult streamResponse(const AFS_Model& model, const nlohmann::json& request,
+                                   AFS_Logger& logger) {
+    StreamResult result;
+    std::vector<StreamToolCall> tool_calls;
+
+    result.ok = model.chatCompletionStream(request, [&](const nlohmann::json& chunk) {
+        if (!chunk.contains("choices") || chunk["choices"].empty()) return true;
+
+        const auto& choice = chunk["choices"][0];
+        if (!choice.contains("delta") || !choice["delta"].is_object()) return true;
+
+        const auto& delta = choice["delta"];
+        std::string reasoning_delta;
+        appendStringField(delta, "reasoning_content", reasoning_delta);
+        appendStringField(delta, "reasoning", reasoning_delta);
+        if (!reasoning_delta.empty()) {
+            result.parsed.reasoning += reasoning_delta;
+            result.emitted = true;
+            logger.publishReasoningDelta(reasoning_delta);
+        }
+
+        std::string content_delta;
+        appendStringField(delta, "content", content_delta);
+        if (!content_delta.empty()) {
+            result.parsed.content += content_delta;
+            result.emitted = true;
+            logger.publishAssistantDelta(content_delta);
+        }
+
+        appendToolCallDelta(delta, tool_calls);
+        return true;
+    });
+
+    for (const auto& call : tool_calls) {
+        if (!call.name.empty()) result.parsed.tool_calls.push_back(buildToolCallJson(call));
+    }
+    return result;
+}
+
 // ---- 工具执行 ---------------------------------------------------------------
 
 static std::vector<AFS::Message> runTools(const std::vector<nlohmann::json>& tcs,
@@ -138,8 +233,8 @@ static std::vector<AFS::Message> runTools(const std::vector<nlohmann::json>& tcs
 
 // ---- 主循环 -----------------------------------------------------------------
 
-std::string AFS_Loop::run(AFS_Context& context, AFS_ToolRegistry& tools,
-                          const AFS_Model& model, const std::string& agent_uuid) {
+std::string AFS_Loop::run(AFS_Context& context, AFS_ToolRegistry& tools, const AFS_Model& model,
+                          const std::string& agent_uuid) {
     LoopData data;
     sml::sm<LoopTable> fsm{data};
 
@@ -153,14 +248,27 @@ std::string AFS_Loop::run(AFS_Context& context, AFS_ToolRegistry& tools,
 
         if (fsm.is(sml::state<WaitingLLM>)) {
             auto req = buildRequest(context, model.modelName(), tools);
-            auto resp = model.chatCompletion(req);
-            if (!resp) {
-                logger.publishError("LLM 请求失败");
-                AFS_LOG_ERROR(agent_uuid, kRoleLoop, "LLM 请求失败");
-                fsm.process_event(give_up{});
-                break;
+            auto streamed = streamResponse(model, req, logger);
+
+            if (streamed.ok) {
+                data.last_parsed = std::move(streamed.parsed);
+            } else {
+                if (streamed.emitted) {
+                    logger.publishError("LLM 流式请求中断");
+                    AFS_LOG_ERROR(agent_uuid, kRoleLoop, "LLM 流式请求中断");
+                    fsm.process_event(give_up{});
+                    break;
+                }
+
+                auto resp = model.chatCompletion(req);
+                if (!resp) {
+                    logger.publishError("LLM 请求失败");
+                    AFS_LOG_ERROR(agent_uuid, kRoleLoop, "LLM 请求失败");
+                    fsm.process_event(give_up{});
+                    break;
+                }
+                data.last_parsed = parseResponse(*resp);
             }
-            data.last_parsed = parseResponse(*resp);
 
             AFS::Message assistant_msg{
                 .role = AFS::Role::Assistant,
@@ -170,13 +278,26 @@ std::string AFS_Loop::run(AFS_Context& context, AFS_ToolRegistry& tools,
             if (!data.last_parsed.tool_calls.empty()) {
                 assistant_msg.tool_calls = data.last_parsed.tool_calls;
             }
-            logger.publishAssistantMessage(assistant_msg.print());
+
+            if (!streamed.ok) {
+                if (!data.last_parsed.reasoning.empty()) {
+                    logger.publishReasoningMessage(data.last_parsed.reasoning);
+                }
+                AFS::Message display_msg = assistant_msg;
+                display_msg.reasoning_content.clear();
+                logger.publishAssistantMessage(display_msg.print());
+            } else if (!data.last_parsed.tool_calls.empty()) {
+                AFS::Message display_msg = assistant_msg;
+                display_msg.content.clear();
+                display_msg.reasoning_content.clear();
+                logger.publishAssistantMessage(display_msg.print());
+            }
             context.addMessage(std::move(assistant_msg));
 
             if (!data.last_parsed.hasToolCalls()) {
                 return data.last_parsed.content;
             }
-            fsm.process_event(llm_ok{*resp});
+            fsm.process_event(llm_ok{nlohmann::json{}});
         }
 
         if (fsm.is(sml::state<Executing>)) {

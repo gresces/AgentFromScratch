@@ -6,6 +6,8 @@
 #include "basic/models/model.hh"
 #include "plugins/plugin_manager.hh"
 
+#include <nlohmann/json.hpp>
+
 #include <filesystem>
 #include <string_view>
 #include <thread>
@@ -32,16 +34,56 @@ std::string stripMessagePrefix(const std::string& text, const char* prefix) {
     return text;
 }
 
+std::string formatJsonValueForDisplay(const nlohmann::json& value);
+
+std::string formatJsonObjectForDisplay(const nlohmann::json& object) {
+    std::string output;
+    bool first = true;
+    for (const auto& [key, value] : object.items()) {
+        if (!first) output += "\n";
+        output += key + ": ";
+        std::string rendered = formatJsonValueForDisplay(value);
+        if (value.is_string() && rendered.find('\n') != std::string::npos) {
+            output += "\n";
+        }
+        output += rendered;
+        first = false;
+    }
+    return output;
+}
+
+std::string formatJsonValueForDisplay(const nlohmann::json& value) {
+    if (value.is_string()) return value.get<std::string>();
+    if (value.is_object()) return formatJsonObjectForDisplay(value);
+    if (value.is_array()) {
+        std::string output;
+        for (size_t i = 0; i < value.size(); ++i) {
+            if (i > 0) output += "\n";
+            output += "- " + formatJsonValueForDisplay(value[i]);
+        }
+        return output;
+    }
+    return value.dump();
+}
+
+std::string formatToolContentForDisplay(const std::string& content) {
+    try {
+        return formatJsonValueForDisplay(nlohmann::json::parse(content));
+    } catch (const nlohmann::json::parse_error&) {
+        return content;
+    }
+}
+
 TuiMessage parseToolMessage(const std::string& text) {
     constexpr std::string_view prefix = "[tool ";
-    if (!text.starts_with(prefix)) return {TuiMessage::Tool, text, ""};
+    if (!text.starts_with(prefix)) return {TuiMessage::Tool, formatToolContentForDisplay(text), ""};
 
     auto end = text.find("] ", prefix.size());
-    if (end == std::string::npos) return {TuiMessage::Tool, text, ""};
+    if (end == std::string::npos) return {TuiMessage::Tool, formatToolContentForDisplay(text), ""};
 
     return {
         TuiMessage::Tool,
-        text.substr(end + 2),
+        formatToolContentForDisplay(text.substr(end + 2)),
         text.substr(prefix.size(), end - prefix.size()),
     };
 }
@@ -100,6 +142,17 @@ std::vector<TuiMessage> AFS_TuiAgentBridge::pollMessages() {
             if (event.message_print)
                 messages.push_back({TuiMessage::Assistant,
                                     stripMessagePrefix(*event.message_print, "[assistant] "), ""});
+            break;
+        case AgentEvent::AssistantDelta:
+            if (!event.text.empty())
+                messages.push_back({TuiMessage::Assistant, event.text, "", true});
+            break;
+        case AgentEvent::ReasoningMessage:
+            if (!event.text.empty()) messages.push_back({TuiMessage::Thinking, event.text, ""});
+            break;
+        case AgentEvent::ReasoningDelta:
+            if (!event.text.empty())
+                messages.push_back({TuiMessage::Thinking, event.text, "", true});
             break;
         case AgentEvent::ToolResult:
             if (event.message_print) messages.push_back(parseToolMessage(*event.message_print));

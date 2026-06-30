@@ -175,7 +175,7 @@ agent.context().addMessage(AFS::AssistantMessage("你好！有什么可以帮助
 4. 创建主 Agent（`AFS_Agent::createMain`），自动注册所有工具
 5. 将命令行 prompt 作为用户消息加入上下文
 6. 运行 `AFS_Loop::run()` 进入 Agent 循环
-7. 按消息顺序输出思考过程、工具调用和结果
+7. 按消息顺序输出思考过程、工具调用和结果；控制台模式会把 ToolResult JSON 字符串字段解码后显示，`\n` / `\t` 等转义呈现为真实换行/制表
 8. 输出最终回复
 
 ## 依赖关系

@@ -27,6 +27,36 @@ std::optional<nlohmann::json> postJson(const std::string& url, const std::string
     }
 }
 
+bool postJsonStream(const std::string& url, const std::string& api_key, const nlohmann::json& body,
+                    const AFS_Model::ChatStreamCallback& on_chunk) {
+    bool callback_ok = true;
+    bool saw_done = false;
+
+    cpr::Response r =
+        cpr::Post(cpr::Url{url},
+                  cpr::Header{{"Authorization", "Bearer " + api_key},
+                              {"Content-Type", "application/json"},
+                              {"Accept", "text/event-stream"}},
+                  cpr::Body{body.dump()},
+                  cpr::ServerSentEventCallback([&](cpr::ServerSentEvent&& event, intptr_t) {
+                      if (event.data == "[DONE]") {
+                          saw_done = true;
+                          return true;
+                      }
+
+                      try {
+                          callback_ok = on_chunk(nlohmann::json::parse(event.data));
+                      } catch (const nlohmann::json::parse_error&) {
+                          callback_ok = false;
+                      }
+                      return callback_ok;
+                  }));
+
+    if (r.error) return false;
+    if (r.status_code < 200 || r.status_code >= 300) return false;
+    return callback_ok && saw_done;
+}
+
 } // namespace
 
 // ---- AFS_Model ---------------------------------------------------------------
@@ -51,6 +81,16 @@ AFS_Model_OpenAICompatible::chatCompletion(const nlohmann::json& request) const 
         body["model"] = model_;
     }
     return postJson(base_url_ + "/chat/completions", api_key_, body);
+}
+
+bool AFS_Model_OpenAICompatible::chatCompletionStream(const nlohmann::json& request,
+                                                      const ChatStreamCallback& on_chunk) const {
+    nlohmann::json body = request;
+    if (!body.contains("model")) {
+        body["model"] = model_;
+    }
+    body["stream"] = true;
+    return postJsonStream(base_url_ + "/chat/completions", api_key_, body, on_chunk);
 }
 
 std::optional<nlohmann::json>

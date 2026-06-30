@@ -4,6 +4,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -14,6 +15,8 @@
 // 所有成员数据在构造时深拷贝。
 class AFS_Model {
   public:
+    using ChatStreamCallback = std::function<bool(const nlohmann::json& chunk)>;
+
     virtual ~AFS_Model() = default;
 
     // ---- type identity -------------------------------------------------------
@@ -21,6 +24,9 @@ class AFS_Model {
 
     // ---- API 调用 ------------------------------------------------------------
     virtual std::optional<nlohmann::json> chatCompletion(const nlohmann::json& request) const = 0;
+
+    virtual bool chatCompletionStream(const nlohmann::json& request,
+                                      const ChatStreamCallback& on_chunk) const = 0;
 
     virtual std::optional<nlohmann::json> embedding(const nlohmann::json& request) const = 0;
 
@@ -48,6 +54,8 @@ class AFS_Model_OpenAICompatible : public AFS_Model {
     std::string modelName() const override { return model_; }
 
     std::optional<nlohmann::json> chatCompletion(const nlohmann::json& request) const override;
+    bool chatCompletionStream(const nlohmann::json& request,
+                              const ChatStreamCallback& on_chunk) const override;
     std::optional<nlohmann::json> embedding(const nlohmann::json& request) const override;
 
   protected:
