@@ -116,6 +116,21 @@ std::unique_ptr<AFS_TuiAgentBridge> AFS_TuiAgentBridge::create(const std::string
     bridge->context_limit_ = config->models().llms[0].context_limit;
     return bridge;
 }
+bool AFS_TuiAgentBridge::reloadConfig(const std::string& config_path) {
+    if (running_.load()) return false;
+
+    auto config = AFS_Config::loadFromFile(config_path);
+    if (!config || config->models().llms.empty()) {
+        AFS_LOG_ERROR(kRoleMain, "", "failed to reload config or no LLM model is configured");
+        return false;
+    }
+
+    agent_->setModel(createModel(config->models().llms[0]));
+    model_name_ = config->models().llms[0].model;
+    context_limit_ = config->models().llms[0].context_limit;
+    return true;
+}
+
 bool AFS_TuiAgentBridge::submitUserMessage(const std::string& content) {
     if (content.empty() || running_.load()) return false;
 

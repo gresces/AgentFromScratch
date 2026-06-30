@@ -29,6 +29,7 @@ Agent 核已完成最小闭环，可在终端通过 TUI 界面运行。插件系
 - 生成 `compile_commands.json` 辅助 LSP。
 
 ## 最近变更
+- **2026-06-30**：实现 TUI 配置模式：`Ctrl+P` 进入配置浏览器查看 JSON 配置（分类/项目导航），`Ctrl+S` 保存 `sidebar_ratio` 并重载模型配置，`Esc` 返回聊天界面。新增 `AFS_TuiRenderConfigMode` 布局、`refreshConfigView`/`saveAndReloadConfig`/`moveConfigSelection` 方法及相应 `AFS_TuiConfigView`/`AFS_TuiConfigCategory`/`AFS_TuiConfigItem` 数据结构。
 
 - **2026-06-30**：新增 token 计数器：模型 `countTokens()` 虚方法（DeepSeek 英文≈0.3/字符中文≈0.6/字符），Context 累计 token，状态栏显示格式化数量（123/100K/2.3M），配置 `context_limit` 支持容量警告（超过 80% 显示 `!`）。
 - **2026-06-30**：Files 侧边栏右键文件/目录可将 `@相对路径` 插入输入框。

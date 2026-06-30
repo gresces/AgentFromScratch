@@ -18,6 +18,7 @@ class AFS_TuiAgentBridge {
     std::size_t messageCount() const { return agent_->context().messageCount(); }
     std::size_t tokenCount() const { return agent_->context().tokenCount(); }
     std::size_t contextLimit() const { return context_limit_; }
+    bool reloadConfig(const std::string& config_path);
     bool submitUserMessage(const std::string& content);
     std::vector<TuiMessage> pollMessages();
 

@@ -83,6 +83,77 @@ Element renderFileDirectory(std::vector<AFS_TuiFileEntry>& entries) {
     return vbox(std::move(lines)) | frame | vscroll_indicator | flex;
 }
 
+std::vector<std::string> splitLines(const std::string& value) {
+    std::vector<std::string> lines;
+    std::size_t start = 0;
+    while (start <= value.size()) {
+        std::size_t end = value.find('\n', start);
+        if (end == std::string::npos) {
+            lines.push_back(value.substr(start));
+            break;
+        }
+        lines.push_back(value.substr(start, end - start));
+        start = end + 1;
+    }
+    if (lines.empty()) lines.push_back("");
+    return lines;
+}
+
+Element configCategories(const AFS_TuiConfigView& view) {
+    Elements entries;
+    for (std::size_t index = 0; index < view.categories.size(); ++index) {
+        Element label = text(" " + view.categories[index].label + " ");
+        if (static_cast<int>(index) == view.category_index) {
+            label = label | color(Color::Black) | bgcolor(Color::Cyan) | bold;
+        } else {
+            label = label | color(Color::Cyan);
+        }
+        entries.push_back(std::move(label));
+    }
+    if (entries.empty()) entries.push_back(text(" config ") | color(Color::Cyan));
+    return hbox(std::move(entries));
+}
+
+Element configItems(const AFS_TuiConfigView& view) {
+    Elements lines;
+    if (view.categories.empty() || view.categories[view.category_index].items.empty()) {
+        lines.push_back(text(" No config items") | dim);
+    } else {
+        const auto& items = view.categories[view.category_index].items;
+        for (std::size_t index = 0; index < items.size(); ++index) {
+            Element line = paragraph(" " + items[index].label);
+            if (static_cast<int>(index) == view.item_index) {
+                line = line | color(Color::White) | bgcolor(Color::Blue) | bold;
+            }
+            lines.push_back(std::move(line));
+        }
+    }
+    return vbox(std::move(lines)) | frame | vscroll_indicator | size(WIDTH, EQUAL, 30);
+}
+
+Element configDetail(const AFS_TuiConfigView& view, Component edit_component) {
+    std::string detail = "No config item selected.";
+    bool editable = false;
+    if (!view.categories.empty() && !view.categories[view.category_index].items.empty()) {
+        const auto& item = view.categories[view.category_index].items[view.item_index];
+        detail = item.detail;
+        editable = item.editable;
+    }
+
+    Elements lines;
+    for (const auto& line : splitLines(detail)) {
+        lines.push_back(paragraph(line));
+    }
+    if (editable) {
+        lines.push_back(separatorLight());
+        lines.push_back(hbox({
+            text(" Value: "),
+            edit_component->Render() | flex,
+        }));
+    }
+    return vbox(std::move(lines)) | frame | vscroll_indicator | flex;
+}
+
 } // namespace
 
 InputOption AFS_TuiInputOption() {
@@ -222,6 +293,33 @@ Element renderFileCandidates(const AFS_TuiFileCandidates& file_candidates) {
         }
     }
     return vbox(std::move(lines));
+}
+
+Element AFS_TuiRenderConfigMode(const AFS_TuiConfigView& view, Component edit_component) {
+    Element header = hbox({
+        text(" Config ") | bold | color(Color::Cyan),
+        separator(),
+        configCategories(view),
+        filler(),
+        text(view.esc_pending ? " Press Esc again to return "
+                              : " Enter/Ctrl+S save, arrows select, Esc return ") |
+            dim,
+    });
+
+    Element status =
+        view.status.empty() ? text("") : text(" " + view.status) | color(Color::Yellow);
+
+    return vbox({
+        std::move(header),
+        separatorLight(),
+        hbox({
+            configItems(view),
+            separatorLight(),
+            configDetail(view, edit_component),
+        }) | flex,
+        separatorLight(),
+        std::move(status),
+    });
 }
 
 Element AFS_TuiRenderInput(Component input_component, bool shell_mode,

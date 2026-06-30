@@ -20,6 +20,10 @@ bool signalMatches(AFS_TuiKeySignal signal, const Event& event) {
         return event == Event::Return;
     case AFS_TuiKeySignal::Tab:
         return event == Event::Tab;
+    case AFS_TuiKeySignal::CtrlP:
+        return event == Event::CtrlP;
+    case AFS_TuiKeySignal::CtrlS:
+        return event == Event::CtrlS;
     case AFS_TuiKeySignal::Backspace:
         return event == Event::Backspace;
     case AFS_TuiKeySignal::Delete:

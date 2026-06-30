@@ -57,6 +57,26 @@ struct AFS_TuiFileCandidates {
     int visible_offset = 0;
     std::vector<std::string> labels;
 };
+struct AFS_TuiConfigItem {
+    std::string label;
+    std::string detail;
+    std::string value_type;
+    std::vector<std::string> path;
+    bool editable = false;
+};
+
+struct AFS_TuiConfigCategory {
+    std::string label;
+    std::vector<AFS_TuiConfigItem> items;
+};
+
+struct AFS_TuiConfigView {
+    std::vector<AFS_TuiConfigCategory> categories;
+    int category_index = 0;
+    int item_index = 0;
+    std::string status;
+    bool esc_pending = false;
+};
 
 using AFS_TuiSidebarButtons = std::array<AFS_TuiSidebarButton, 2>;
 
@@ -67,5 +87,7 @@ ftxui::Element AFS_TuiRenderQuickIndex(std::vector<AFS_TuiQuickIndexEntry>& entr
 ftxui::Element AFS_TuiRenderSidebar(AFS_TuiSidebarMode mode, AFS_TuiSidebarButtons& buttons,
                                     std::vector<AFS_TuiQuickIndexEntry>& quick_index_entries,
                                     std::vector<AFS_TuiFileEntry>& file_entries);
+ftxui::Element AFS_TuiRenderConfigMode(const AFS_TuiConfigView& view,
+                                       ftxui::Component edit_component);
 ftxui::Element AFS_TuiRenderInput(ftxui::Component input_component, bool shell_mode,
                                   const AFS_TuiFileCandidates& file_candidates);

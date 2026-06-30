@@ -11,14 +11,17 @@
 #include <ftxui/screen/terminal.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <array>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <cstdio>
 #include <cstdlib>
 #include <thread>
 #include <set>
 #include <string_view>
+#include <nlohmann/json.hpp>
 #include <sys/wait.h>
 
 using namespace ftxui;
@@ -63,6 +66,206 @@ void appendMessages(std::vector<TuiMessage>& messages, const std::vector<TuiMess
         }
         messages.push_back(message);
     }
+}
+std::string jsonScalarLabel(const nlohmann::json& value) {
+    if (value.is_string()) return value.get<std::string>();
+    if (value.is_number_integer()) return std::to_string(value.get<long long>());
+    if (value.is_number_unsigned()) return std::to_string(value.get<unsigned long long>());
+    if (value.is_number_float()) return value.dump();
+    if (value.is_boolean()) return value.get<bool>() ? "true" : "false";
+    if (value.is_null()) return "null";
+    return value.is_array() ? "[" + std::to_string(value.size()) + "]"
+                            : "{" + std::to_string(value.size()) + "}";
+}
+
+std::string configPathLabel(const std::vector<std::string>& path) {
+    std::string label;
+    for (const auto& segment : path) {
+        if (!label.empty()) label += ".";
+        label += segment;
+    }
+    return label;
+}
+
+bool isSensitiveConfigPath(const std::vector<std::string>& path) {
+    if (path.empty()) return false;
+    std::string lower;
+    lower.reserve(path.back().size());
+    for (char ch : path.back())
+        lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+    return lower.find("key") != std::string::npos || lower.find("token") != std::string::npos ||
+           lower.find("secret") != std::string::npos || lower.find("password") != std::string::npos;
+}
+
+const nlohmann::json* configValueAt(const nlohmann::json& root,
+                                    const std::vector<std::string>& path) {
+    const nlohmann::json* current = &root;
+    for (const auto& segment : path) {
+        if (current->is_object()) {
+            auto it = current->find(segment);
+            if (it == current->end()) return nullptr;
+            current = &(*it);
+            continue;
+        }
+        if (current->is_array()) {
+            std::size_t index = 0;
+            try {
+                index = static_cast<std::size_t>(std::stoull(segment));
+            } catch (const std::exception&) {
+                return nullptr;
+            }
+            if (index >= current->size()) return nullptr;
+            current = &(*current)[index];
+            continue;
+        }
+        return nullptr;
+    }
+    return current;
+}
+
+nlohmann::json& ensureConfigValueAt(nlohmann::json& root, const std::vector<std::string>& path) {
+    nlohmann::json* current = &root;
+    for (const auto& segment : path) {
+        if (current->is_array()) {
+            std::size_t index = static_cast<std::size_t>(std::stoull(segment));
+            current = &(*current)[index];
+        } else {
+            current = &(*current)[segment];
+        }
+    }
+    return *current;
+}
+
+std::string configValueForInput(const nlohmann::json& root, const std::vector<std::string>& path,
+                                std::string_view value_type) {
+    const nlohmann::json* value = configValueAt(root, path);
+    if (!value) return value_type == "number" ? "0.35" : "";
+    if (value->is_string()) return value->get<std::string>();
+    return jsonScalarLabel(*value);
+}
+
+std::string configDetailText(const nlohmann::json& root, const std::vector<std::string>& path,
+                             std::string_view value_type, bool editable) {
+    const nlohmann::json* value = configValueAt(root, path);
+    std::string current = value ? jsonScalarLabel(*value) : "<missing>";
+    if (isSensitiveConfigPath(path) && value && value->is_string()) current = "***";
+
+    std::string detail = "Path: " + configPathLabel(path) + "\n";
+    detail += "Type: " + std::string(value_type) + "\n";
+    detail += "Current: " + current + "\n";
+    detail += editable ? "Edit the value below, then press Ctrl+S to save and reload."
+                       : "This row is read-only.";
+    return detail;
+}
+
+AFS_TuiConfigItem makeConfigItem(const nlohmann::json& root, std::vector<std::string> path,
+                                 std::string label, std::string value_type) {
+    return {
+        .label = std::move(label),
+        .detail = configDetailText(root, path, value_type, true),
+        .value_type = std::move(value_type),
+        .path = std::move(path),
+        .editable = true,
+    };
+}
+
+AFS_TuiConfigItem makeReadonlyConfigItem(std::string label, std::string detail) {
+    return {
+        .label = std::move(label),
+        .detail = std::move(detail),
+        .editable = false,
+    };
+}
+
+std::string modelEntryName(const nlohmann::json& item, int index) {
+    if (item.is_object() && item.contains("name") && item["name"].is_string()) {
+        return item["name"].get<std::string>();
+    }
+    if (item.is_object() && item.contains("model") && item["model"].is_string()) {
+        return item["model"].get<std::string>();
+    }
+    return "#" + std::to_string(index);
+}
+
+void appendModelConfigItems(const nlohmann::json& root, std::string_view group_key,
+                            std::string category_label,
+                            std::vector<AFS_TuiConfigCategory>& categories) {
+    AFS_TuiConfigCategory category;
+    category.label = std::move(category_label);
+
+    const nlohmann::json* models = configValueAt(root, {"models"});
+    const nlohmann::json* group =
+        models && models->is_object() ? configValueAt(*models, {std::string(group_key)}) : nullptr;
+    if (!group || !group->is_array() || group->empty()) {
+        category.items.push_back(
+            makeReadonlyConfigItem("No entries", "No configured model entries in this list."));
+        categories.push_back(std::move(category));
+        return;
+    }
+
+    for (std::size_t index = 0; index < group->size(); ++index) {
+        const nlohmann::json& item = (*group)[index];
+        std::string prefix = "[" + std::to_string(index) + "] " +
+                             modelEntryName(item, static_cast<int>(index)) + " / ";
+        std::string index_segment = std::to_string(index);
+        category.items.push_back(
+            makeConfigItem(root, {"models", std::string(group_key), index_segment, "name"},
+                           prefix + "name", "string"));
+        category.items.push_back(
+            makeConfigItem(root, {"models", std::string(group_key), index_segment, "base_url"},
+                           prefix + "base_url", "string"));
+        category.items.push_back(
+            makeConfigItem(root, {"models", std::string(group_key), index_segment, "api_key"},
+                           prefix + "api_key", "string"));
+        category.items.push_back(
+            makeConfigItem(root, {"models", std::string(group_key), index_segment, "model"},
+                           prefix + "model", "string"));
+        category.items.push_back(
+            makeConfigItem(root, {"models", std::string(group_key), index_segment, "context_limit"},
+                           prefix + "context_limit", "unsigned integer"));
+    }
+    categories.push_back(std::move(category));
+}
+
+std::vector<AFS_TuiConfigCategory> buildConfigCategories(const nlohmann::json& root) {
+    std::vector<AFS_TuiConfigCategory> categories;
+    if (!root.is_object()) return categories;
+
+    appendModelConfigItems(root, "llms", "models.llms", categories);
+    appendModelConfigItems(root, "embeddings", "models.embeddings", categories);
+
+    AFS_TuiConfigCategory tui_layout;
+    tui_layout.label = "tui.layout";
+    tui_layout.items.push_back(
+        makeConfigItem(root, {"tui", "layout", "sidebar_ratio"}, "sidebar_ratio", "number"));
+    categories.push_back(std::move(tui_layout));
+    return categories;
+}
+
+bool loadConfigJson(const std::filesystem::path& path, nlohmann::json& root, std::string& error) {
+    std::ifstream input(path);
+    if (!input.is_open()) {
+        error = "无法打开配置文件: " + path.string();
+        return false;
+    }
+    try {
+        input >> root;
+    } catch (const nlohmann::json::exception& ex) {
+        error = std::string("配置 JSON 解析失败: ") + ex.what();
+        return false;
+    }
+    return true;
+}
+
+bool saveConfigJson(const std::filesystem::path& path, const nlohmann::json& root,
+                    std::string& error) {
+    std::ofstream output(path);
+    if (!output.is_open()) {
+        error = "无法写入配置文件: " + path.string();
+        return false;
+    }
+    output << root.dump(2) << '\n';
+    return true;
 }
 
 bool hasFileCandidateTrigger(const std::string& input) {
@@ -448,6 +651,57 @@ bool handleSidebarResize(Event event, int total_width, const Box& splitter_box,
     return true;
 }
 
+const AFS_TuiConfigItem* selectedConfigItem(const std::vector<AFS_TuiConfigCategory>& categories,
+                                            int category_index, int item_index) {
+    if (categories.empty()) return nullptr;
+    if (category_index < 0 || category_index >= static_cast<int>(categories.size())) return nullptr;
+
+    const auto& items = categories[category_index].items;
+    if (items.empty()) return nullptr;
+    if (item_index < 0 || item_index >= static_cast<int>(items.size())) return nullptr;
+    return &items[item_index];
+}
+
+bool parseConfigEditValue(const AFS_TuiConfigItem& item, const std::string& text,
+                          nlohmann::json& out, std::string& error) {
+    try {
+        if (item.value_type == "string") {
+            out = text;
+            return true;
+        }
+        if (item.value_type == "unsigned integer") {
+            if (text.empty() || text.starts_with("-")) {
+                error = "Expected an unsigned integer for " + configPathLabel(item.path);
+                return false;
+            }
+            std::size_t consumed = 0;
+            unsigned long long value = std::stoull(text, &consumed);
+            if (consumed != text.size()) {
+                error = "Expected an unsigned integer for " + configPathLabel(item.path);
+                return false;
+            }
+            out = value;
+            return true;
+        }
+        if (item.value_type == "number") {
+            std::size_t consumed = 0;
+            double value = std::stod(text, &consumed);
+            if (consumed != text.size()) {
+                error = "Expected a number for " + configPathLabel(item.path);
+                return false;
+            }
+            out = value;
+            return true;
+        }
+    } catch (const std::exception& ex) {
+        error = "Invalid value for " + configPathLabel(item.path) + ": " + ex.what();
+        return false;
+    }
+
+    error = "Unsupported config value type for " + configPathLabel(item.path);
+    return false;
+}
+
 ShellResult executeShellCommand(const std::string& command) {
     ShellResult result;
     std::string wrapped = "/bin/bash -lc " + shellQuote(command) + " 2>&1";
@@ -490,6 +744,108 @@ std::unique_ptr<AFS_TuiApp> AFS_TuiApp::create(const std::string& config_path) {
     }
     app->file_entries_ = buildFileEntries(currentDirectoryPath(), app->expanded_file_dirs_);
     return app;
+}
+
+void AFS_TuiApp::refreshConfigView() {
+    nlohmann::json root;
+    std::string error;
+    if (!loadConfigJson(config_path_, root, error)) {
+        config_root_ = nlohmann::json::object();
+        config_categories_.clear();
+        config_category_index_ = 0;
+        config_item_index_ = 0;
+        config_edit_value_.clear();
+        config_status_ = error;
+        return;
+    }
+
+    config_root_ = std::move(root);
+    config_categories_ = buildConfigCategories(config_root_);
+    if (config_categories_.empty()) {
+        config_category_index_ = 0;
+        config_item_index_ = 0;
+    } else {
+        config_category_index_ =
+            std::clamp(config_category_index_, 0, static_cast<int>(config_categories_.size()) - 1);
+        const auto& items = config_categories_[config_category_index_].items;
+        config_item_index_ =
+            items.empty() ? 0
+                          : std::clamp(config_item_index_, 0, static_cast<int>(items.size()) - 1);
+    }
+    syncConfigEditBuffer();
+    config_status_ = "Config loaded: " + config_path_.string();
+}
+
+void AFS_TuiApp::syncConfigEditBuffer() {
+    const AFS_TuiConfigItem* item =
+        selectedConfigItem(config_categories_, config_category_index_, config_item_index_);
+    if (!item || !item->editable) {
+        config_edit_value_.clear();
+        return;
+    }
+    config_edit_value_ = configValueForInput(config_root_, item->path, item->value_type);
+}
+
+void AFS_TuiApp::saveAndReloadConfig() {
+    const AFS_TuiConfigItem* item =
+        selectedConfigItem(config_categories_, config_category_index_, config_item_index_);
+    if (!item || !item->editable) {
+        config_status_ = "Selected config row is read-only";
+        return;
+    }
+
+    nlohmann::json parsed_value;
+    std::string error;
+    if (!parseConfigEditValue(*item, config_edit_value_, parsed_value, error)) {
+        config_status_ = error;
+        return;
+    }
+
+    try {
+        ensureConfigValueAt(config_root_, item->path) = std::move(parsed_value);
+    } catch (const std::exception& ex) {
+        config_status_ = "Failed to update " + configPathLabel(item->path) + ": " + ex.what();
+        return;
+    }
+
+    if (item->path == std::vector<std::string>{"tui", "layout", "sidebar_ratio"}) {
+        sidebar_ratio_ =
+            clampSidebarRatio(config_root_["tui"]["layout"]["sidebar_ratio"].get<double>());
+        config_root_["tui"]["layout"]["sidebar_ratio"] = sidebar_ratio_;
+    }
+
+    if (!saveConfigJson(config_path_, config_root_, error)) {
+        config_status_ = error;
+        return;
+    }
+    if (!agent_bridge_->reloadConfig(config_path_.string())) {
+        config_status_ = "Config saved, but model reload failed";
+        return;
+    }
+
+    refreshConfigView();
+    config_status_ = "Config saved and reloaded";
+}
+
+void AFS_TuiApp::moveConfigSelection(int category_delta, int item_delta) {
+    if (config_categories_.empty()) return;
+
+    int category_count = static_cast<int>(config_categories_.size());
+    int previous_category = config_category_index_;
+    config_category_index_ =
+        std::clamp(config_category_index_ + category_delta, 0, category_count - 1);
+
+    int item_count = static_cast<int>(config_categories_[config_category_index_].items.size());
+    if (item_count <= 0) {
+        config_item_index_ = 0;
+        syncConfigEditBuffer();
+        return;
+    }
+    if (previous_category != config_category_index_) {
+        config_item_index_ = std::clamp(config_item_index_, 0, item_count - 1);
+    }
+    config_item_index_ = std::clamp(config_item_index_ + item_delta, 0, item_count - 1);
+    syncConfigEditBuffer();
 }
 
 // ---- Agent interaction ------------------------------------------------------
@@ -586,8 +942,12 @@ void AFS_TuiApp::run() {
 
     auto input_opt = AFS_TuiInputOption();
     auto input_component = Input(&input_, "", input_opt);
+    auto config_edit_component = Input(&config_edit_value_, "", input_opt);
+    int active_input_index = 0;
+    auto input_tabs = Container::Tab({input_component, config_edit_component}, &active_input_index);
 
-    auto main_component = Renderer(input_component, [&] {
+    auto main_component = Renderer(input_tabs, [&] {
+        active_input_index = config_mode_ ? 1 : 0;
         float scroll_position =
             follow_latest_ ? 1.0F : static_cast<float>(scroll_position_) / kScrollBottom;
         int terminal_width = std::max(1, Terminal::Size().dimx);
@@ -609,6 +969,22 @@ void AFS_TuiApp::run() {
             std::lock_guard lock(messages_mutex_);
             quick_index_entries_ = show_sidebar ? buildQuickIndexEntries(messages_)
                                                 : std::vector<AFS_TuiQuickIndexEntry>{};
+        }
+
+        if (config_mode_) {
+            return vbox({
+                status_renderer->Render(),
+                AFS_TuiRenderConfigMode(
+                    {
+                        .categories = config_categories_,
+                        .category_index = config_category_index_,
+                        .item_index = config_item_index_,
+                        .status = config_status_,
+                        .esc_pending = esc_pending_,
+                    },
+                    config_edit_component) |
+                    flex,
+            });
         }
 
         Element content_area =
@@ -635,6 +1011,54 @@ void AFS_TuiApp::run() {
 
     main_component |= CatchEvent([this, &screen](Event event) -> bool {
         if (event.is_character()) esc_pending_ = false;
+
+        if (config_mode_) {
+            if (event == Event::Escape) {
+                if (esc_pending_) {
+                    config_mode_ = false;
+                    esc_pending_ = false;
+                    return true;
+                }
+                esc_pending_ = true;
+                return true;
+            }
+            if (event == Event::ArrowLeft) {
+                esc_pending_ = false;
+                moveConfigSelection(-1, 0);
+                return true;
+            }
+            if (event == Event::ArrowRight) {
+                esc_pending_ = false;
+                moveConfigSelection(1, 0);
+                return true;
+            }
+            if (event == Event::ArrowUp) {
+                esc_pending_ = false;
+                moveConfigSelection(0, -1);
+                return true;
+            }
+            if (event == Event::ArrowDown) {
+                esc_pending_ = false;
+                moveConfigSelection(0, 1);
+                return true;
+            }
+            if (event == Event::Return) {
+                esc_pending_ = false;
+                saveAndReloadConfig();
+                return true;
+            }
+            if (event == Event::CtrlS) {
+                esc_pending_ = false;
+                saveAndReloadConfig();
+                return true;
+            }
+            if (event == Event::CtrlP) {
+                esc_pending_ = false;
+                config_mode_ = false;
+                return true;
+            }
+            return false;
+        }
 
         if (!shell_mode_ &&
             handleFileCandidateKey(event, input_, file_candidate_query_, file_candidate_index_)) {
@@ -666,6 +1090,18 @@ void AFS_TuiApp::run() {
                     submitShell();
                 else
                     submit();
+                return true;
+            case AFS_TuiKeyAction::OpenConfigMode:
+                refreshConfigView();
+                config_mode_ = true;
+                shell_mode_ = false;
+                esc_pending_ = false;
+                file_candidate_query_.clear();
+                file_candidate_index_ = 0;
+                return true;
+            case AFS_TuiKeyAction::SaveConfig:
+                saveAndReloadConfig();
+                esc_pending_ = false;
                 return true;
             case AFS_TuiKeyAction::Scroll:
                 scroll_position_ =

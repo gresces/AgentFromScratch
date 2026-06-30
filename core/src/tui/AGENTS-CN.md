@@ -15,6 +15,59 @@
 
 每个子目录必须有自己的 `AGENTS-CN.md`，说明该子模块边界和约定。
 
+## 配置模式
+
+配置模式提供配置文件编辑界面，通过 `Ctrl+P` 激活，`Ctrl+P` 或 `Esc` 返回聊天界面。
+
+### 激活与退出
+
+- `Ctrl+P`：刷新并进入配置模式；此时 Shell 模式退出，文件候选清空
+- `Ctrl+P`（配置模式下）：返回聊天界面
+- `Esc`：第一次显示退出确认提示，再按一次返回聊天界面
+
+### 导航
+
+| 快捷键 | 行为 |
+|--------|------|
+| `←` / `→` | 切换配置分类（`models.llms`、`models.embeddings`、`tui.layout`） |
+| `↑` / `↓` | 切换当前分类下的可编辑配置项 |
+
+### 保存
+
+- `Enter` / `Ctrl+S`：解析当前选中配置项输入框的内容，写回配置文件，保存到磁盘，并通知 Agent 桥接层重载模型配置
+- 保存后状态栏显示操作结果（成功 / 失败原因）；`tui.layout.sidebar_ratio` 保存时会按运行时范围钳制
+
+### 布局
+
+```
+ Config ───────────────────── Enter/Ctrl+S save, arrows select, Esc return
+──────────────────────────────────────────────────────────────────────────────
+ models.llms      │ Path: models.llms.0.name                                  │
+  [0] DeepSeek / name                                                          │
+  [0] DeepSeek / base_url                                                      │
+  [0] DeepSeek / api_key                                                       │
+  [0] DeepSeek / model                                                         │
+  [0] DeepSeek / context_limit                                                 │
+ models.embeddings                                                             │
+ tui.layout                                                                    │
+  sidebar_ratio                                                                │
+──────────────────────────────────────────────────────────────────────────────
+ Config loaded: /home/user/.config/afs/config.json
+```
+
+- 左侧：配置分类与配置项列表；右侧：选中项的路径、类型、当前值和可编辑输入框
+- 当前选中分类和项目高亮（蓝底白字）；敏感字段在详情中以 `***` 显示，但输入框用于编辑真实配置值
+- 底部状态行显示加载/保存结果
+
+### 实现
+
+- `AFS_TuiApp::refreshConfigView()`：读取配置文件 → 按 `basic/config` 中的结构化选项构建 `models.llms`、`models.embeddings`、`tui.layout` 分类 → 同步当前项输入框
+- `AFS_TuiApp::syncConfigEditBuffer()`：根据当前选中项路径读取 JSON 标量值并填充输入框
+- `AFS_TuiApp::saveAndReloadConfig()`：解析当前输入框 → 写回选中 JSON 路径 → 保存到磁盘 → 通知 `agent_bridge_->reloadConfig()`
+- `AFS_TuiApp::moveConfigSelection(dc, di)`：按 delta 移动分类/项目索引，自动 clamp 到有效范围，并同步输入框
+- 渲染由 `AFS_TuiRenderConfigMode(const AFS_TuiConfigView&, Component)` 完成，位于 `layout/layout.cc`
+  渲染时若 `config_mode_` 为 true，主渲染 lambda 直接返回配置视图，跳过消息区和普通输入栏
+
 ## 入口选择
 
 ```
@@ -38,6 +91,9 @@ class AFS_TuiApp {
     void submit();       // Agent 模式：写入上下文并运行 Agent
     void submitShell();  // Shell 模式：执行 /bin/bash -lc，不写入上下文
     void pollEvents();
+    void refreshConfigView();       // 加载配置文件到配置视图
+    void saveAndReloadConfig();     // 保存 sidebar_ratio 并重载模型配置
+    void moveConfigSelection(int category_delta, int item_delta);
 
     std::unique_ptr<AFS_TuiAgentBridge> agent_bridge_;
     std::vector<TuiMessage> messages_;
@@ -49,6 +105,11 @@ class AFS_TuiApp {
     std::filesystem::path config_path_;
     int scroll_position_ = 1000;
     int spinner_frame_ = 0;
+    std::vector<AFS_TuiConfigCategory> config_categories_;  // 配置浏览器分类
+    int config_category_index_ = 0;
+    int config_item_index_ = 0;
+    std::string config_status_;
+    bool config_mode_ = false;
     bool esc_pending_ = false;
     double sidebar_ratio_ = 0.35;
     bool resizing_sidebar_ = false;
@@ -70,6 +131,7 @@ class AFS_TuiApp {
 - 键盘语义映射：`keymap/keymap.hh`
 - 消息模型：`message/message.hh`
 - TUI-only shell 命令执行：`app.cc::submitShell()`，不进入 Agent 上下文
+- 配置模式查看与保存：`app.cc::refreshConfigView()` / `saveAndReloadConfig()`，不进入 Agent 上下文
 
 ## 界面文字
 
@@ -153,6 +215,9 @@ main_component (Renderer + CatchEvent)
 | `↑` / `↓` | 文件候选激活时移动高亮；否则消息区上/下滚动 |
 | `PageUp` / `PageDown` | 消息区翻页滚动 |
 | 鼠标滚轮 | 消息区滚动 |
+| `Ctrl+P` | 打开配置模式；配置模式下返回聊天界面 |
+| `Ctrl+S` | 配置模式下保存并重载配置 |
+
 
 不要把 `Ctrl+J` 当作多行输入快捷键。FTXUI 中 plain Enter 和 `Ctrl+J` 都是 LF；TUI 只把 plain LF 作为提交处理。多行输入仅匹配 modified Enter 序列（如 `ESC [ 13 ; 2 u` / `ESC [ 13 ; 5 u`）。
 
@@ -221,3 +286,16 @@ Shell 模式约束：
 - 输入栏 `multiline = true` 只用于显示和保存换行；提交由外层 `CatchEvent` 接管。
 - 输入栏通过 `InputOption::transform` 去除反转背景，不使用 underline。
 - 新增 TUI 功能优先放入现有子模块；不要把布局、输入事件、Agent 交互逻辑塞回单个大函数。
+
+### 配置模式组件树
+
+```
+config_mode_ == true 时：
+main_component
+  └── Renderer(…)
+        ├── AFS_TuiRenderStatus(…)
+        └── AFS_TuiRenderConfigMode(config_view, config_edit_component)
+              ├── header: "Config" + 分类列表 + 提示文字
+              ├── hbox: configItems(view) | configDetail(view, edit input)
+              └── status: 操作结果文字
+```
