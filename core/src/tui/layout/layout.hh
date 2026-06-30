@@ -20,6 +20,8 @@ struct AFS_TuiStatusView {
     std::string model_name;
     std::string work_dir;
     std::size_t context_count = 0;
+    std::size_t context_tokens = 0;
+    std::size_t context_limit = 0;
 };
 
 struct AFS_TuiQuickIndexEntry {

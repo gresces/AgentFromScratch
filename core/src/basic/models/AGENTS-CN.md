@@ -29,6 +29,7 @@ AFS_Model                         (抽象基类)
 | `chatCompletion(request)` | `std::optional<nlohmann::json>` | 聊天补全请求，失败返回 `nullopt` |
 | `chatCompletionStream(request, on_chunk)` | `bool` | SSE 流式聊天补全请求，失败返回 `false` |
 | `embedding(request)` | `std::optional<nlohmann::json>` | 嵌入向量请求，失败返回 `nullopt` |
+| `countTokens(text)` | `std::size_t` | 估算字符串的 token 数量。DeepSeek：英文≈0.3/字符，中文≈0.6/字符；默认≈0.25/字符 |
 | `name()` | `const std::string&` | 模型标识名（来自配置的 `name` 字段） |
 | `modelName()` | `std::string` | API 模型名称（来自配置的 `model` 字段），子类覆盖 |
 
@@ -49,10 +50,8 @@ AFS_Model                         (抽象基类)
 专用于 DeepSeek API 的模型，`modelType()` 返回 `"DeepSeek"`。
 
 - 继承 `AFS_Model_OpenAICompatible`，复用 OpenAI 兼容的请求/响应格式。
-- 构造时直接将 `AFS_ModelConfig` 委托给父类，无额外逻辑。
-- DeepSeek API 与 OpenAI 协议完全兼容，端点路径、请求/响应格式均相同。
-- 单独设为一个子类的理由：未来 DeepSeek 可能有专有特性（如特殊的 reasoning token 处理），独立子类便于定制。
-- 参考文档：[DeepSeek API Docs](https://api-docs.deepseek.com/)
+- `countTokens()` 覆盖为专属公式：英文≈0.3/字符，中文≈0.6/字符。
+- DeepSeek v4 上下文容量为 **1M tokens**，建议在配置中设置 `"context_limit": 1000000`。
 
 ## 工厂函数
 

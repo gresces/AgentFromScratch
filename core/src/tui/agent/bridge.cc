@@ -113,9 +113,9 @@ std::unique_ptr<AFS_TuiAgentBridge> AFS_TuiAgentBridge::create(const std::string
     bridge->agent_ = std::move(agent);
     bridge->model_name_ = config->models().llms[0].model;
     bridge->work_dir_ = shortWorkingDirectory();
+    bridge->context_limit_ = config->models().llms[0].context_limit;
     return bridge;
 }
-
 bool AFS_TuiAgentBridge::submitUserMessage(const std::string& content) {
     if (content.empty() || running_.load()) return false;
 

@@ -30,6 +30,10 @@ class AFS_Model {
 
     virtual std::optional<nlohmann::json> embedding(const nlohmann::json& request) const = 0;
 
+    // ---- token counting ------------------------------------------------------
+    // 估算字符串的 token 数量。子类可按模型特性覆盖。
+    virtual std::size_t countTokens(const std::string& text) const;
+
     // ---- accessors -----------------------------------------------------------
     const std::string& name() const { return name_; }
     virtual std::string modelName() const = 0;
@@ -73,6 +77,7 @@ class AFS_Model_DeepSeek : public AFS_Model_OpenAICompatible {
     explicit AFS_Model_DeepSeek(const AFS_ModelConfig& cfg);
 
     std::string_view modelType() const override;
+    std::size_t countTokens(const std::string& text) const override;
 };
 
 // ---- 工厂函数 ----------------------------------------------------------------

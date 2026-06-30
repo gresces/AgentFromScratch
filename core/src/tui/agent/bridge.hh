@@ -16,7 +16,8 @@ class AFS_TuiAgentBridge {
     const std::string& workDir() const { return work_dir_; }
     bool running() const { return running_.load(); }
     std::size_t messageCount() const { return agent_->context().messageCount(); }
-
+    std::size_t tokenCount() const { return agent_->context().tokenCount(); }
+    std::size_t contextLimit() const { return context_limit_; }
     bool submitUserMessage(const std::string& content);
     std::vector<TuiMessage> pollMessages();
 
@@ -26,5 +27,6 @@ class AFS_TuiAgentBridge {
     std::unique_ptr<AFS_Agent> agent_;
     std::string model_name_;
     std::string work_dir_;
+    std::size_t context_limit_ = 0;
     std::atomic<bool> running_{false};
 };

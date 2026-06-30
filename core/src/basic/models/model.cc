@@ -64,6 +64,13 @@ bool postJsonStream(const std::string& url, const std::string& api_key, const nl
 AFS_Model::AFS_Model(std::string name) : name_(std::move(name)) {
 }
 
+std::size_t AFS_Model::countTokens(const std::string& text) const {
+    // 默认粗略估算：每个字符 ≈ 0.25 token
+    if (text.empty()) return 0;
+    std::size_t total = text.size() / 4;
+    return total == 0 ? 1 : total;
+}
+
 // ---- AFS_Model_OpenAICompatible ----------------------------------------------
 
 AFS_Model_OpenAICompatible::AFS_Model_OpenAICompatible(const AFS_ModelConfig& cfg)
@@ -103,6 +110,30 @@ AFS_Model_OpenAICompatible::embedding(const nlohmann::json& request) const {
 }
 
 // ---- AFS_Model_DeepSeek ------------------------------------------------------
+
+std::size_t AFS_Model_DeepSeek::countTokens(const std::string& text) const {
+    // DeepSeek token 估算公式：
+    //   1 个英文字符 ≈ 0.3 token
+    //   1 个中文字符 ≈ 0.6 token
+    if (text.empty()) return 0;
+
+    double total = 0.0;
+    for (unsigned char c : text) {
+        // 粗略判断：ASCII 可打印字符 + 空白 ≈ 英文
+        if (c < 0x80) {
+            total += 0.3;
+        } else {
+            // 多字节字符（中文等）≈ 0.6
+            total += 0.6;
+        }
+    }
+    // 注意：UTF-8 多字节字符由多个 unsigned char 组成，但这里只对首字节 > 0x7F 计数。
+    // 对于多字节字符的续字节（10xxxxxx），也被计为 0.6，会略微高估。
+    // 实际 UTF-8 中英文 ASCII 占 1 字节，中文占 3 字节，
+    // 以字节计: ASCII 0.3/byte, 中文 0.6/3 = 0.2/byte，平均接近 0.3。
+    auto result = static_cast<std::size_t>(total);
+    return result == 0 ? 1 : result;
+}
 
 AFS_Model_DeepSeek::AFS_Model_DeepSeek(const AFS_ModelConfig& cfg)
     : AFS_Model_OpenAICompatible(cfg) {

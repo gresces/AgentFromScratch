@@ -10,10 +10,11 @@
 // ---- AFS_ModelConfig ---------------------------------------------------------
 // 单个模型配置条目：可用于 LLM 或 embedding 模型。
 struct AFS_ModelConfig {
-    std::string name;     // 模型标识名
-    std::string base_url; // API 基地址
-    std::string api_key;  // API 密钥
-    std::string model;    // 模型名称
+    std::string name;
+    std::string base_url;
+    std::string api_key;
+    std::string model;
+    std::size_t context_limit = 0; // 0 = 无限制
 };
 
 // ---- AFS_ModelsConfig --------------------------------------------------------

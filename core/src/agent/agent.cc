@@ -201,6 +201,9 @@ void AFS_Agent::fixSubtreeLevels(AFS_Agent& node) {
 
 void AFS_Agent::setModel(std::unique_ptr<AFS_Model> model) {
     model_ = std::move(model);
+    context_.setTokenCounter(
+        [raw = model_.get()](const std::string& text) { return raw->countTokens(text); });
+    context_.recomputeTokens(*model_);
 }
 
 std::string AFS_Agent::run() {

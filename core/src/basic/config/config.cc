@@ -9,6 +9,9 @@ void from_json(const nlohmann::json& j, AFS_ModelConfig& cfg) {
     j.at("base_url").get_to(cfg.base_url);
     j.at("api_key").get_to(cfg.api_key);
     j.at("model").get_to(cfg.model);
+    if (j.contains("context_limit") && j["context_limit"].is_number_unsigned()) {
+        cfg.context_limit = j["context_limit"].get<std::size_t>();
+    }
 }
 
 void from_json(const nlohmann::json& j, AFS_ModelsConfig& models) {

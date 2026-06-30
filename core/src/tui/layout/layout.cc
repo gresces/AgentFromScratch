@@ -112,7 +112,25 @@ Element AFS_TuiRenderStatus(const AFS_TuiStatusView& view) {
 
     auto model = text(view.model_name) | dim;
     auto dir = text(view.work_dir) | dim;
-    auto ctx_count = text("ctx " + std::to_string(view.context_count)) | dim;
+
+    // Token count display
+    std::string token_text;
+    if (view.context_tokens > 0) {
+        if (view.context_tokens >= 1'000'000) {
+            token_text = std::to_string(view.context_tokens / 1'000'000) + "." +
+                         std::to_string((view.context_tokens % 1'000'000) / 100'000) + "M";
+        } else if (view.context_tokens >= 1'000) {
+            token_text = std::to_string(view.context_tokens / 1'000) + "K";
+        } else {
+            token_text = std::to_string(view.context_tokens);
+        }
+        // Warning when >80% of limit
+        if (view.context_limit > 0 && view.context_tokens > view.context_limit * 4 / 5) {
+            token_text += "!";
+        }
+    }
+    auto ctx_token = text(token_text) | dim;
+
     auto mode = text(view.shell_mode ? "SHELL" : "AGENT") |
                 color(view.shell_mode ? Color::Magenta : Color::Cyan) | bold;
     auto separator = " | ";
@@ -126,10 +144,9 @@ Element AFS_TuiRenderStatus(const AFS_TuiStatusView& view) {
         text(separator) | dim,
         dir,
         text(separator) | dim,
-        ctx_count,
+        ctx_token,
     });
 }
-
 Element AFS_TuiRenderMessages(const std::vector<TuiMessage>& messages) {
     Elements lines;
     for (const auto& message : messages) {

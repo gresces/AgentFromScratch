@@ -340,6 +340,23 @@ bool handleFileEntryClick(Event event, const std::vector<AFS_TuiFileEntry>& entr
     return false;
 }
 
+bool handleFileEntryRightClick(Event event, const std::vector<AFS_TuiFileEntry>& entries,
+                               std::string& input) {
+    if (!event.is_mouse()) return false;
+    auto mouse = event.mouse();
+    if (mouse.button != Mouse::Right || mouse.motion != Mouse::Pressed) return false;
+
+    for (const auto& entry : entries) {
+        if (!boxContains(entry.box, mouse.x, mouse.y)) continue;
+        std::error_code ec;
+        std::string rel = std::filesystem::relative(entry.path, ec).string();
+        if (ec) rel = entry.path.filename().string();
+        input = "@" + rel;
+        return true;
+    }
+    return false;
+}
+
 bool handleQuickIndexClick(Event event, const std::vector<AFS_TuiQuickIndexEntry>& entries,
                            int& scroll_position, bool& follow_latest) {
     if (!event.is_mouse()) return false;
@@ -562,6 +579,8 @@ void AFS_TuiApp::run() {
             .model_name = agent_bridge_->modelName(),
             .work_dir = agent_bridge_->workDir(),
             .context_count = agent_bridge_->messageCount(),
+            .context_tokens = agent_bridge_->tokenCount(),
+            .context_limit = agent_bridge_->contextLimit(),
         });
     });
 
@@ -674,6 +693,12 @@ void AFS_TuiApp::run() {
 
         if (sidebar_mode_ == AFS_TuiSidebarMode::Files &&
             handleFileEntryClick(event, file_entries_, expanded_file_dirs_, file_entries_)) {
+            return true;
+        }
+
+        if (sidebar_mode_ == AFS_TuiSidebarMode::Files &&
+            handleFileEntryRightClick(event, file_entries_, input_)) {
+            esc_pending_ = false;
             return true;
         }
 
