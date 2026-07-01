@@ -1,3 +1,9 @@
 bin/
 plugins/tools/*/ToolPlugin*
 plugins/tools/*/SkillPlugin*
+plugins/context/*/ContextPlugin*
+plugins/context/*/.xmake/
+plugins/context/*/build/
+plugins/loop/*/LoopPlugin*
+plugins/loop/*/.xmake/
+plugins/loop/*/build/

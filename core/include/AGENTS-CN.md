@@ -28,8 +28,7 @@ AFS_PLUGIN_EXPORT void destroyPlugin(AFS::Plugin* p) { delete p; }
 
 ---
 
-这个文件夹中的头文件只包含导出给开发者的部分，例如工具插件开发者仅需知道 `AFS::ToolSpec`。
-`AFS_ToolCall`、`AFS_ToolResult`、`AFS_ToolRegistry` 等运行时类型属于 Agent 内部实现，定义在 `core/src/agent/tool/`。
+这个文件夹中的头文件只包含导出给插件的公共 ABI。工具插件通常只需要 `AFS::Plugin::ToolCap` 和 `AFS::ToolSpec`；运行时插件通过 `AFS::Context`、`AFS::Loop`、`AFS::Model`、`AFS::ToolExecutor`、`AFS::LoopEvents` 与宿主交互。
 
 ## 文件
 
@@ -37,12 +36,14 @@ AFS_PLUGIN_EXPORT void destroyPlugin(AFS::Plugin* p) { delete p; }
 |------|------|
 | `afs.hh` | 总入口，包含所有子模块 |
 | `afs/common.hh` | UUID 生成工具（header-only） |
+| `afs/context.hh` | `AFS::Context` 运行时上下文接口 |
+| `afs/loop.hh` | `AFS::Loop` 运行时循环接口与 `AFS::LoopConfig` |
 | `afs/message.hh` | 消息类型声明 |
 | `afs/metadata.hh` | 公共 metadata 辅助函数（`appendMeta`，header-only） |
-| `afs/plugin.hh` | 插件基类、导出宏、ABI 版本、`ToolCap`、可选配置 schema 导出签名 |
-| `afs/tool.hh` | `AFS::ToolSpec`（插件开发者唯一需要的工具类型） |
+| `afs/plugin.hh` | 插件基类、导出宏、ABI 版本、`ToolCap`、运行时工厂、可选配置 schema 导出签名 |
+| `afs/tool.hh` | `AFS::ToolSpec`、`AFS::ToolCall`、`AFS::ToolResult`、`AFS::ToolExecutor` |
 
-所有公共 API 类型均为 header-only，`print()` 方法内联在对应头文件中，无需单独的 `.cc` 实现文件。
+大多数公共 API 为 header-only；`AFS::ToolCall`、`AFS::ToolResult` 的构造/打印由 core 提供符号。
 
 ---
 
@@ -154,7 +155,7 @@ inline void appendMeta(std::string& out, const MetaData& meta) {
 ### 常量与宏
 
 ```cpp
-inline constexpr std::uint32_t PluginAbiVersion = 1;  // ABI 版本
+inline constexpr std::uint32_t PluginAbiVersion = 2;  // ABI 版本
 
 // 跨平台导出宏
 #if defined(_WIN32)
@@ -167,7 +168,7 @@ inline constexpr std::uint32_t PluginAbiVersion = 1;  // ABI 版本
 ### `AFS::PluginType`
 
 ```cpp
-enum class PluginType : std::uint32_t { Generic = 0, Tool = 1, Skill = 2 };
+enum class PluginType : std::uint32_t { Generic = 0, Tool = 1, Skill = 2, Context = 3, Loop = 4 };
 ```
 
 ### `AFS::Plugin`
@@ -192,6 +193,9 @@ struct ToolCap {
     std::function<std::string(const std::string&)> func; // 执行函数
 };
 virtual std::vector<ToolCap> toolCapabilities() const;  // 默认空列表
+virtual std::unique_ptr<Context> createContext() const;  // 默认 nullptr
+virtual std::unique_ptr<Loop> createLoop() const;        // 默认 nullptr
+
 ```
 
 ### C ABI 导出签名
@@ -243,9 +247,18 @@ AFS_PLUGIN_EXPORT void destroyPlugin(AFS::Plugin* p) { delete p; }
 
 ---
 
-## `afs/tool.hh` — `AFS::ToolSpec`
+## `afs/context.hh` / `afs/loop.hh` / `afs/model.hh` — 运行时插件接口
 
-插件开发者唯一需要知道的工具类型。
+`AFS::Context` 和 `AFS::Loop` 是 Context/Loop 运行时插件实现的抽象接口。宿主通过
+`AFS_PluginManager::createContext()` / `createLoop()` 自动发现并创建实例（取第一个已加载的 context/loop 类型插件）。
+Loop 插件通过 `AFS::Model` 调用模型，通过 `AFS::ToolExecutor` 查询和执行工具，通过
+`AFS::LoopEvents` 将流式输出、工具结果、错误和完成事件交回宿主。
+
+---
+
+## `afs/tool.hh` — 工具公共类型
+
+工具插件通常只需要 `AFS::ToolSpec`；Loop 插件还会使用 `AFS::ToolCall`、`AFS::ToolResult` 和 `AFS::ToolExecutor`。
 
 ```cpp
 struct ToolSpec {
@@ -258,7 +271,7 @@ struct ToolSpec {
 ```
 
 `AFS::ToolSpec` 是 `AFS::Plugin::ToolCap` 的公共表示。插件通过 `ToolCap` 返回能力，
-Agent 内部转换为 `ToolSpec` 注册到 `AFS_ToolRegistry`。
+Agent 内部转换为 `ToolSpec` 注册到内部工具注册表，并通过 `AFS::ToolExecutor` 暴露给 Loop 插件。
 
 ---
 
@@ -282,5 +295,5 @@ Agent 内部转换为 `ToolSpec` 注册到 `AFS_ToolRegistry`。
 ## 约定
 
 - 公共 API 只增加、不删除，保持向后兼容。
-- 运行时类型（`AFS_ToolCall`、`AFS_ToolResult`、`AFS_ToolRegistry`）不在此目录。
-- 所有 `print()` 实现位于 `core/src/afs/`。
+- 运行时插件只能包含 `core/include/` 下的公共头文件；需要新增宿主能力时先抽象到公共接口。
+- `AFS::ToolCall`、`AFS::ToolResult` 的非内联函数由 core 提供，插件通过主程序导出符号解析。

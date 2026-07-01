@@ -1,23 +1,23 @@
 # core > src > agent > tool > AGENTS-CN.md
 
-Agent 内部工具调用模块。提供工具注册、执行和结果管理。
+Agent 工具注册模块。公共工具调用数据结构位于 `core/include/afs/tool.hh`，本目录提供内部注册表实现。
 
 ## 文件
 
 | 文件 | 职责 |
 |------|------|
-| `tool.hh` | `AFS_ToolCall`、`AFS_ToolResult`、`AFS_ToolRegistry` |
-| `tool.cc` | 全部实现 |
+| `tool.hh` | `AFS_ToolCall` / `AFS_ToolResult` 兼容别名、`AFS_ToolRegistry` |
+| `tool.cc` | `AFS_ToolRegistry` 实现 |
 
 ## 类型详解
 
 ### `AFS_ToolSpec`
 
-工具说明书，描述工具的名称、功能和输入格式。公共类型 `AFS::ToolSpec` 的别名。
+工具说明书，描述工具的名称、功能和输入格式。公共类型为 `AFS::ToolSpec`。
 
 ### `AFS_ToolCall`
 
-Agent 发起的单次工具调用请求。
+Agent 发起的单次工具调用请求。公共类型为 `AFS::ToolCall`，`AFS_ToolCall` 是兼容别名。
 
 ```cpp
 struct AFS_ToolCall {
@@ -31,7 +31,7 @@ struct AFS_ToolCall {
 
 ### `AFS_ToolResult`
 
-工具执行结果。
+工具执行结果。公共类型为 `AFS::ToolResult`，`AFS_ToolResult` 是兼容别名。
 
 ```cpp
 struct AFS_ToolResult {
@@ -52,7 +52,7 @@ using AFS_ToolFunc = std::function<AFS_ToolResult(const AFS_ToolCall&)>;
 
 ### `AFS_ToolRegistry`
 
-工具注册与执行器。
+工具注册与执行器，实现公共接口 `AFS::ToolExecutor`。
 
 | 方法 | 说明 |
 |------|------|
@@ -116,5 +116,5 @@ auto result = registry.execute(call);
 
 ## 架构位置
 
-工具注册由 `AFS_Agent::registerTools()` 和 `AFS_Agent::loadExtraTool()` 调用，执行由 Agent 的 LLM 循环驱动。
-插件开发者无需了解本模块，只需实现 `AFS::Plugin::toolCapabilities()`。
+工具注册由 `AFS_Agent::registerTools()` 和 `AFS_Agent::loadExtraTool()` 调用，执行由 `AFS::Loop` 插件通过 `AFS::ToolExecutor` 接口驱动。
+普通工具插件开发者无需了解本模块，只需实现 `AFS::Plugin::toolCapabilities()`。

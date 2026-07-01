@@ -114,9 +114,11 @@ AgentFromScratch/
 │   │   ├── afs.hh            ← 总入口头文件
 │   │   └── afs/
 │   │       ├── common.hh     ← UUID 工具（uuid8 / uuid16）
+│   │       ├── context.hh    ← 运行时上下文接口（AFS::Context）
+│   │       ├── loop.hh       ← 运行时循环接口（AFS::Loop / LoopConfig）
 │   │       ├── message.hh    ← 消息类型（Role、Message、便捷子类）
 │   │       ├── metadata.hh   ← 公共 metadata 辅助（appendMeta）
-│   │       ├── plugin.hh     ← 插件接口（Plugin、PluginType、导出宏）
+│   │       ├── plugin.hh     ← 插件接口（Plugin、PluginType、运行时工厂）
 │   │       └── tool.hh       ← 公共 ToolSpec 类型
 │   │
 │   └── src/                  ← 源代码
@@ -134,9 +136,9 @@ AgentFromScratch/
 │       ├── agent/            ← Agent 核心定义
 │       │   ├── AGENTS-CN.md  ← AFS_Agent 类、树状结构、所有权模型
 │       │   ├── agent.hh / .cc
-│       │   ├── loop/         ← 对话循环（boost::sml 状态机）
+│       │   ├── loop/         ← 对话循环接口包装与配置加载
 │       │   │   └── AGENTS-CN.md
-│       │   ├── context/      ← 上下文管理器（消息历史）
+│       │   ├── context/      ← 上下文接口包装
 │       │   │   └── AGENTS-CN.md
 │       │   └── tool/         ← 工具调用模块（注册、执行）
 │       │       └── AGENTS-CN.md
@@ -153,11 +155,15 @@ AgentFromScratch/
 ├── plugins/                  ← 插件源码（独立于 core 编译）
 │   ├── AGENTS-CN.md          ← 插件目录说明、编译方法、命名规则
 │   ├── build.sh              ← 顶层编译脚本（自动发现子插件）
+│   ├── context/              ← Context 类型插件源码
+│   │   └── simple/           ← ContextPluginSimple（xmake）
+│   ├── loop/                 ← Loop 类型插件源码
+│   │   └── simple/           ← LoopPluginSimple（xmake）
 │   └── tools/                ← 工具插件源码
 │       ├── bash/             ← bash 命令执行工具插件
 │       │   └── AGENTS-CN.md
-│       └── compute/          ← 示例：compute 工具插件
-│           └── AGENTS-CN.md
+│       ├── compute/          ← 示例：compute 工具插件
+│       │   └── AGENTS-CN.md
 │       └── file/             ← 文件读写工具插件
 │           └── AGENTS-CN.md
 │
@@ -252,9 +258,11 @@ ${XDG_CONFIG_HOME:-~/.config}/afs/
 主要内容：
 - `afs.hh` — 总入口，包含所有子模块
 - `afs/common.hh` — UUID 生成工具（`AFS::uuid8()` / `AFS::uuid16()`）
+- `afs/context.hh` — 运行时上下文接口（`AFS::Context`）
+- `afs/loop.hh` — 运行时循环接口（`AFS::Loop` / `AFS::LoopConfig`）
 - `afs/message.hh` — 消息类型（`AFS::Role`、`AFS::Message` 及便捷子类）
-- `afs/plugin.hh` — 插件基类（`AFS::Plugin`）、导出宏、ABI 版本
-- `afs/tool.hh` — `AFS::ToolSpec`（插件开发者唯一需要的工具类型）
+- `afs/plugin.hh` — 插件基类（`AFS::Plugin`）、导出宏、ABI 版本、运行时工厂
+- `afs/tool.hh` — `AFS::ToolSpec`（工具插件开发者唯一需要的工具类型）
 
 ### 插件开发速览
 

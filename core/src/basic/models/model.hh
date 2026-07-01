@@ -1,6 +1,7 @@
 #pragma once
 
 #include "basic/config/config.hh"
+#include <afs/model.hh>
 
 #include <nlohmann/json.hpp>
 
@@ -42,9 +43,9 @@ std::optional<AFS_ModelsConfig> AFS_LoadModelsConfig();
 // ---- AFS_Model ---------------------------------------------------------------
 // 模型抽象基类：不可变，由配置创建，创建后内容不可修改。
 // 所有成员数据在构造时深拷贝。
-class AFS_Model {
+class AFS_Model : public AFS::Model {
   public:
-    using ChatStreamCallback = std::function<bool(const nlohmann::json& chunk)>;
+    using ChatStreamCallback = AFS::Model::ChatStreamCallback;
 
     virtual ~AFS_Model() = default;
     // ---- config schema ------------------------------------------------------
@@ -54,23 +55,23 @@ class AFS_Model {
     }
 
     // ---- type identity -------------------------------------------------------
-    virtual std::string_view modelType() const = 0;
+    std::string_view modelType() const override = 0;
 
     // ---- API 调用 ------------------------------------------------------------
-    virtual std::optional<nlohmann::json> chatCompletion(const nlohmann::json& request) const = 0;
+    std::optional<nlohmann::json> chatCompletion(const nlohmann::json& request) const override = 0;
 
-    virtual bool chatCompletionStream(const nlohmann::json& request,
-                                      const ChatStreamCallback& on_chunk) const = 0;
+    bool chatCompletionStream(const nlohmann::json& request,
+                              const ChatStreamCallback& on_chunk) const override = 0;
 
-    virtual std::optional<nlohmann::json> embedding(const nlohmann::json& request) const = 0;
+    std::optional<nlohmann::json> embedding(const nlohmann::json& request) const override = 0;
 
     // ---- token counting ------------------------------------------------------
     // 估算字符串的 token 数量。子类可按模型特性覆盖。
-    virtual std::size_t countTokens(const std::string& text) const;
+    std::size_t countTokens(const std::string& text) const override;
 
     // ---- accessors -----------------------------------------------------------
-    const std::string& name() const { return name_; }
-    virtual std::string modelName() const = 0;
+    const std::string& name() const override { return name_; }
+    std::string modelName() const override = 0;
 
   protected:
     explicit AFS_Model(std::string name);

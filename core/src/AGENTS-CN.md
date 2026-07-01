@@ -11,9 +11,9 @@ Agent 核的源代码目录，按职责分层组织。所有 C++ 代码集中于
 | ├─ `models/` | 模型抽象与实现（`AFS_Model`、OpenAI 兼容、DeepSeek）及模型配置结构 |
 | `agent/` | Agent 核心定义与运行循环 |
 | ├─ `agent.hh` / `agent.cc` | Agent 节点：树结构、工具注册、子 Agent 管理 |
-| ├─ `context/` | 上下文管理器：消息历史累积、LLM 请求构建 |
-| ├─ `loop/` | 核心运行循环：boost::sml 状态机，LLM ↔ 工具执行 |
-| ├─ `tool/` | 工具注册与执行：`AFS_ToolRegistry`、`AFS_ToolCall` |
+| ├─ `context/` | `AFS::Context` 接口兼容包装 |
+| ├─ `loop/` | `AFS::Loop` 接口兼容包装与配置加载 |
+| ├─ `tool/` | 工具注册与执行：`AFS_ToolRegistry` 实现 `AFS::ToolExecutor` |
 | `include/` | 兼容性存根目录（仅保留 AGENTS-CN.md） |
 | `plugins/` | 插件系统实现 |
 | ├─ `plugin_loader.hh` / `plugin_loader.cc` | 动态库加载器：RAII `AFS_LoadedPlugin` |
@@ -83,28 +83,29 @@ Agent 采用**树状结构**组织。关键规则：
 
 **Agent 内部组件**：
 - `AFS_Model` — 通过 `setModel()` 注入，Agent 独占所有权。
-- `AFS_Loop` — 私有成员，驱动 LLM ↔ 工具执行的完整循环。
-- `AFS_Context` — 私有成员，管理对话消息历史。
-Loop 仅通过 `run(context_, tool_registry_, *model_, uuid_)` 获取所需资源，运行时事件写入 `AFS_Logger` 缓冲区。
+- `std::unique_ptr<AFS_Context>` — 由 `ContextPluginSimple` 创建，管理对话消息历史。
+- `std::unique_ptr<AFS_Loop>` — 由 `LoopPluginSimple` 创建，驱动 LLM ↔ 工具执行的完整循环。
+Loop 仅通过 `run(*context_, tool_registry_, *model_, events, uuid_)` 获取所需资源，运行时事件经 `AFS::LoopEvents` 写入 `AFS_Logger` 缓冲区。
 
 **陷阱**：子 Agent 的上下文由父级显式设置，不自动继承父级消息。
 
-#### agent/context/ — 上下文管理器（AFS_Context）
+#### agent/context/ — 上下文接口包装（AFS_Context）
 
-每个 `AFS_Agent` 持有一个 `AFS_Context` 实例，负责：
+`AFS_Context` 是 `AFS::Context` 的兼容别名，默认实现位于
+`plugins/context/simple/ContextPluginSimple`。每个 `AFS_Agent` 持有一个插件创建的实例，负责：
 
 - 累积对话历史（`addMessage()`、`addMessages()`）
 - 构建 LLM 请求用消息数组（`buildRequest()`）
 - 生成可读上下文摘要（`buildPrompt()`）
-
 ```cpp
 agent.context().addMessage(AFS::UserMessage("你好"));
 agent.context().addMessage(AFS::AssistantMessage("你好！有什么可以帮助你的？"));
 ```
 
-#### agent/loop/ — 核心运行循环（AFS_Loop）
+#### agent/loop/ — 核心运行循环接口（AFS_Loop）
 
-基于 `boost::sml` 状态机实现的 Agent 核心循环：
+`AFS_Loop` 是 `AFS::Loop` 的兼容别名，默认实现位于
+`plugins/loop/simple/LoopPluginSimple`，基于 `boost::sml` 状态机实现：
 
 1. 将上下文序列化为 LLM 请求
 2. 调用模型获取响应
@@ -112,15 +113,15 @@ agent.context().addMessage(AFS::AssistantMessage("你好！有什么可以帮助
 4. 执行工具调用，将结果写回上下文
 5. 循环直到模型返回纯文本回复（无工具调用）
 
-最大迭代次数 `kMaxIterations = 50`，防止无限循环。`ParsedResponse` 结构体分离 content、reasoning 和 tool_calls。
+最大迭代次数来自 `AFS::LoopConfig::max_iterations`，默认 50 次。
 
 #### agent/tool/ — 工具注册与执行（AFS_ToolRegistry）
 
-内部工具系统，与插件系统的关系是：插件通过 `AFS_ToolSpec` + 可调用对象注册到注册表。
+内部工具系统与插件系统的关系是：插件通过 `AFS::ToolSpec` + 可调用对象注册到注册表，Loop 运行时插件通过 `AFS::ToolExecutor` 查询和执行工具。
 
-- `AFS_ToolCall` — Agent 发起的单次工具调用请求（uuid、name、arguments、environment、metadata）
-- `AFS_ToolResult` — 工具调用执行结果（call_uuid、success、output、error）
-- `AFS_ToolRegistry` — 注册、查询、执行工具的注册表
+- `AFS::ToolCall` / `AFS_ToolCall` — Agent 发起的单次工具调用请求（uuid、name、arguments、environment、metadata）
+- `AFS::ToolResult` / `AFS_ToolResult` — 工具调用执行结果（call_uuid、success、output、error）
+- `AFS_ToolRegistry` — 注册、查询、执行工具的内部注册表，实现 `AFS::ToolExecutor`
 
 ### include/ — 兼容性存根
 
@@ -190,9 +191,8 @@ main.cc
  ├─ basic/models/     (模型创建)
  ├─ plugins/          (插件管理器，加载 .so)
  └─ agent/
-      ├─ agent/       (Agent 节点)
-      ├─ context/     (上下文)
-      ├─ loop/        (运行循环 → 调用 model)
+      ├─ context/     (AFS_Context 接口包装，实例来自 context 类型插件)
+      ├─ loop/        (Loop 配置加载，实例来自 loop 类型插件)
       └─ tool/        (工具注册表)
 ```
 
@@ -200,5 +200,6 @@ main.cc
 
 - **头文件依赖**：`core/src/**/*.cc` 引用 `core/include/afs/` 下的公共头文件（如 `<afs/message.hh>`）。`core/src/` 内部不定义公共类型。
 - **插件 .so 路径**：默认插件目录为 `${XDG_CONFIG_HOME:-~/.config}/afs/plugins/`，`plugin_manager` 按 `<type>/` 子目录查找。
+- **运行时插件**：`AFS_Agent` 创建时通过类型自动发现第一个 context/loop 插件（不依赖具体名称）；开发或安装时需先运行 `plugins/build.sh install` 或显式设置 `plugins.directory`。
 - **单例生命周期**：`AFS_PluginManager` 是 `shared_ptr` 单例，在 `main()` 结束前不会析构——不要在全局析构阶段访问它。
 - **状态机**：`AFS_Loop` 基于 `boost::sml`，修改循环逻辑前需了解 sml 的事件/状态/转换模型。

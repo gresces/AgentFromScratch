@@ -1,35 +1,5 @@
 #include "agent/tool/tool.hh"
 
-// ---- AFS_ToolCall -----------------------------------------------------------
-
-AFS_ToolCall::AFS_ToolCall() : uuid(AFS::uuid16()) {
-}
-
-std::string AFS_ToolCall::print() const {
-    std::string out;
-    out += "[ToolCall " + uuid + "] " + name + "(" + arguments + ")";
-    if (!environment.empty()) {
-        out += " env=[";
-        for (size_t i = 0; i < environment.size(); ++i) {
-            if (i > 0) out += ", ";
-            out += environment[i];
-        }
-        out += "]";
-    }
-    appendMeta(out, metadata);
-    return out;
-}
-
-// ---- AFS_ToolResult ---------------------------------------------------------
-
-std::string AFS_ToolResult::print() const {
-    std::string out;
-    out += "[ToolResult " + call_uuid + "] " + tool_name + " ";
-    out += success ? "OK: " + output : "FAIL: " + error;
-    appendMeta(out, metadata);
-    return out;
-}
-
 // ---- AFS_ToolRegistry -------------------------------------------------------
 
 void AFS_ToolRegistry::registerTool(AFS::ToolSpec spec, AFS_ToolFunc func) {

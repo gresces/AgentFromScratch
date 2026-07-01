@@ -19,9 +19,11 @@ core/
 │   ├── afs.hh                 # 总入口，包含所有子模块
 │   └── afs/                   # 按模块分组的公共头文件
 │       ├── common.hh          # UUID 生成工具
+│       ├── context.hh         # AFS::Context 运行时上下文接口
+│       ├── loop.hh            # AFS::Loop 运行时循环接口与 LoopConfig
 │       ├── message.hh         # 消息类型（AFS::Message、AFS::Role）
 │       ├── metadata.hh        # 公共 metadata 辅助函数（appendMeta）
-│       ├── plugin.hh          # 插件基类、导出宏、ABI 版本
+│       ├── plugin.hh          # 插件基类、导出宏、ABI 版本、运行时工厂
 │       └── tool.hh            # AFS::ToolSpec
 │
 └── src/                       # 源代码
@@ -37,8 +39,8 @@ core/
     ├── agent/                 # Agent 核心定义与运行循环
     │   ├── AGENTS-CN.md       # AFS_Agent 类、树结构、所有权模型、生命周期
     │   ├── agent.hh / .cc     # Agent 节点实现
-    │   ├── context/           # 对话上下文管理（AFS_Context）
-    │   ├── loop/              # LLM 交互循环（boost::sml 状态机）
+    │   ├── context/           # AFS_Context 接口兼容包装，实例来自 context 类型插件
+    │   ├── loop/              # Loop 配置加载与 AFS_Loop 接口包装，实例来自 loop 类型插件
     │   └── tool/              # 工具调用框架（AFS_ToolRegistry）
     │
     ├── plugins/               # 插件系统
@@ -181,16 +183,17 @@ xmake clean
 
 ### 构建插件
 
-插件独立编译，仅需包含 `core/include/`：
+插件独立编译，插件源码只能包含 `core/include/` 下的公共头文件。Context/Loop 分别是独立插件类型，通过公共 `AFS::Context`、`AFS::Loop`、`AFS::Model`、`AFS::ToolExecutor`、`AFS::LoopEvents` 接口与宿主解耦，并可通过 xmake 管理自己的依赖：
 
 ```bash
-c++ -std=c++23 -fPIC -shared -fvisibility=hidden \
-    my_plugin.cpp \
-    -I core/include \
-    -o ToolPluginMy
+cd plugins
+./build.sh              # 编译 context + loop + tools + skills 下所有插件
+./build.sh install      # 安装到 ${XDG_CONFIG_HOME:-~/.config}/afs/plugins/<type>/
+./build.sh context/simple      # 单独编译 ContextPluginSimple
+./build.sh loop/simple install # 单独编译并安装 LoopPluginSimple
 ```
 
-插件默认放入 `${XDG_CONFIG_HOME:-~/.config}/afs/plugins/tool/`（工具插件）或 `${XDG_CONFIG_HOME:-~/.config}/afs/plugins/skill/`（技能插件），
+插件默认放入 `${XDG_CONFIG_HOME:-~/.config}/afs/plugins/tool/`、`skill/`、`context/` 或 `loop/`，
 文件命名格式：`<Type>Plugin<Name>`（详见 `src/plugins/AGENTS-CN.md`）。
 
 ### 典型开发工作流
@@ -230,8 +233,8 @@ c++ -std=c++23 -fPIC -shared -fvisibility=hidden \
 | `src/basic/log/AGENTS-CN.md` | 全局日志、发布-订阅总线、事件类型 |
 | `src/basic/models/AGENTS-CN.md` | 模型抽象、HTTP 请求、流式支持、工厂函数 |
 | `src/agent/AGENTS-CN.md` | Agent 树结构、所有权模型、生命周期 |
-| `src/agent/context/AGENTS-CN.md` | 对话上下文管理 |
-| `src/agent/loop/AGENTS-CN.md` | 状态机循环、流式 LLM 交互 |
+| `src/agent/context/AGENTS-CN.md` | 上下文接口包装与 ContextPluginSimple 边界 |
+| `src/agent/loop/AGENTS-CN.md` | Loop 配置加载、接口包装与 LoopPluginSimple 边界 |
 | `src/agent/tool/AGENTS-CN.md` | 工具注册与执行 |
 | `src/plugins/AGENTS-CN.md` | 插件系统、引用计数、销毁顺序 |
 | `src/tui/AGENTS-CN.md` | TUI 应用层：布局、输入、滚动、Shell 模式 |

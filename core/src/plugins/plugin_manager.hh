@@ -46,6 +46,10 @@ class AFS_PluginManager {
     // 释放插件引用，引用计数归零时自动 dlclose。
     void unloadPlugin(AFS::PluginType type, const std::string& plugin_name);
 
+    // 创建运行时 Context/Loop 实例。对象由调用方独占持有。
+    std::unique_ptr<AFS::Context> createContext();
+    std::unique_ptr<AFS::Loop> createLoop();
+
     // 获取所有已加载工具插件的能力函数列表。
     std::vector<AFS::Plugin::ToolCap> allToolCaps() const;
 
@@ -68,6 +72,9 @@ class AFS_PluginManager {
     std::string makeKey(AFS::PluginType type, const std::string& plugin_name) const;
     std::string pluginFileName(AFS::PluginType type, const std::string& plugin_name) const;
     std::string pluginDirName(AFS::PluginType type) const;
+    AFS::Plugin& requirePlugin(AFS::PluginType type, const std::string& plugin_name);
+    // 获取第一个已加载的指定类型插件（用于 Context/Loop 自动发现）。
+    AFS::Plugin& requireFirstPlugin(AFS::PluginType type);
 
     std::filesystem::path plugin_dir_;
     std::unordered_map<std::string, PluginEntry> plugins_;

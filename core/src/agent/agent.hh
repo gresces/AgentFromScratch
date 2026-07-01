@@ -69,8 +69,8 @@ class AFS_Agent {
     const std::string& uuid() const { return uuid_; }
     const AFS_ToolRegistry& toolRegistry() const { return tool_registry_; }
     AFS_ToolRegistry& toolRegistry() { return tool_registry_; }
-    AFS_Context& context() { return context_; }
-    const AFS_Context& context() const { return context_; }
+    AFS_Context& context() { return *context_; }
+    const AFS_Context& context() const { return *context_; }
     const AFS_Model* model() const { return model_.get(); }
 
     // ---- logging ------------------------------------------------------------
@@ -94,9 +94,9 @@ class AFS_Agent {
     std::string uuid_;
     std::vector<std::unique_ptr<AFS_Agent>> sub_agent_nodes_;
     AFS_ToolRegistry tool_registry_;
-    AFS_Context context_;
+    std::unique_ptr<AFS_Context> context_;
     std::unique_ptr<AFS_Model> model_;
-    AFS_Loop loop_;
+    std::unique_ptr<AFS_Loop> loop_;
     // 本 Agent 加载的插件列表（用于析构时释放引用计数）
     std::vector<std::pair<AFS::PluginType, std::string>> loaded_plugins_;
 };

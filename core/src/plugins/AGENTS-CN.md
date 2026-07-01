@@ -9,7 +9,7 @@
 | `plugin_loader.hh` | `AFS_LoadedPlugin` RAII 封装 |
 | `plugin_loader.cc` | `dlopen`/`dlsym`/`dlclose` |
 | `plugin_manager.hh` | `AFS_PluginManager` 单例 |
-| `plugin_manager.cc` | 目录扫描、命名解析、引用计数、插件可选配置 schema 注册 |
+| `plugin_manager.cc` | 目录扫描、命名解析、引用计数、运行时工厂、插件可选配置 schema 注册 |
 
 ## `AFS_PluginManager`
 
@@ -21,6 +21,8 @@
 | `loadFromDirectory(dir)` | 扫描 `dir/<type>/` 子目录，解析 `<Type>Plugin<Name>` 文件名格式并加载（ref=1） |
 | `loadPlugin(type, name)` | 按类型+名称加载指定插件；已加载则 ref+1 |
 | `unloadPlugin(type, name)` | 释放引用；ref=0 时自动 dlclose |
+| `createContext()` | 自动发现并加载 `context/` 下第一个插件，从中创建 `AFS::Context` 实例 |
+| `createLoop()` | 自动发现并加载 `loop/` 下第一个插件，从中创建 `AFS::Loop` 实例 |
 | `allToolCaps()` | 获取所有已加载工具插件的 `ToolCap` 列表 |
 | `toolCaps(type, name)` | 获取指定插件的 `ToolCap` 列表 |
 | `loadedToolPlugins()` | 获取所有已加载工具插件的 `(type, name)` 列表 |
@@ -77,16 +79,20 @@ Agent 的 `~AFS_Agent()` 已保证此顺序，无需额外处理。
   ├── pm = AFS_PluginManager::instance()
   │
   ├── pm->loadFromDirectory(AFS_DefaultPluginDirectory())
+  │     ├── 扫描 ${XDG_CONFIG_HOME:-~/.config}/afs/plugins/context/ContextPlugin*
+  │     ├── 扫描 ${XDG_CONFIG_HOME:-~/.config}/afs/plugins/loop/LoopPlugin*
   │     ├── 扫描 ${XDG_CONFIG_HOME:-~/.config}/afs/plugins/tool/ToolPlugin*
   │     ├── 扫描 ${XDG_CONFIG_HOME:-~/.config}/afs/plugins/skill/SkillPlugin*
   │     └── 每个文件: dlopen → 验证 C ABI → 存储 (ref=1)
   │
   ├── agent = AFS_Agent::createMain()
-  │     └── 自动调用 registerTools()（level==0）
+  │     ├── pm->createContext() → 自动发现 context 插件 → createContext()
+  │     ├── pm->createLoop()    → 自动发现 loop 插件 → createLoop()
+  │     ├── 自动调用 registerTools()（level==0）
   │     ├── pm->loadedToolPlugins() → [(Tool,"compute"), ...]
   │     ├── 遍历: pm->toolCaps(type, name)
   │     ├── 每个 cap → tool_registry_.registerTool(spec, lambda)
-  │     ├── 记录到 loaded_plugins_ (析构时释放)
+  │     ├── 记录工具插件到 loaded_plugins_ (析构时释放)
   │     └── 追加工具提示到 context_
   │
   ├── agent->genSubNode()
@@ -107,6 +113,8 @@ Agent 的 `~AFS_Agent()` 已保证此顺序，无需额外处理。
 | Tool | compute | `ToolPluginCompute` |
 | Tool | weather | `ToolPluginWeather` |
 | Skill | search | `SkillPluginSearch` |
+| Context | 任意 | `ContextPlugin*`（代码不依赖 name） |
+| Loop | 任意 | `LoopPlugin*`（代码不依赖 name） |
 
 目录结构：
 ```
@@ -114,8 +122,12 @@ ${XDG_CONFIG_HOME:-~/.config}/afs/plugins/
 ├── tool/
 │   ├── ToolPluginCompute
 │   └── ToolPluginWeather
-└── skill/
-    └── SkillPluginSearch
+├── skill/
+│   └── SkillPluginSearch
+├── context/
+│   └── ContextPluginSimple
+└── loop/
+    └── LoopPluginSimple
 ```
 
 ## 架构关系
@@ -134,6 +146,8 @@ AFS_PluginManager                         AFS_Agent
   │                                    ~AFS_Agent()
   │                                      └── 遍历 loaded_plugins_
   │                                           → pm->unloadPlugin()
+  ├── createContext() → ContextPluginSimple
+  ├── createLoop()    → LoopPluginSimple
   └── (工具能力查询)
         ├── allToolCaps() → Agent 批量注册用
         ├── toolCaps(type,name) → 单个查询

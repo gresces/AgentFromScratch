@@ -1,13 +1,13 @@
 [
 {
   "directory": "/home/gresces/Projects/AgentFromScratch/main/core",
-  "arguments": ["/usr/bin/g++", "-c", "-m64", "-fvisibility=hidden", "-fvisibility-inlines-hidden", "-O3", "-std=c++23", "-Isrc", "-Iinclude", "-DSPDLOG_SHARED_LIB", "-DSPDLOG_COMPILED_LIB", "-DSPDLOG_FMT_EXTERNAL", "-I", "/home/gresces/.xmake/packages/f/ftxui/v6.1.9/e32f75b14e2841348a64fa1d2a17499f/include", "-I", "/home/gresces/.xmake/packages/b/boost_sml/v1.1.13/fb5b36505caf44c6a14d321bd3ad0d2c/include", "-I", "/home/gresces/.xmake/packages/t/taskflow/v4.0.0/2d8f4a8e9f674d2d87f2da1f3d90a596/include", "-I", "/home/gresces/.xmake/packages/c/cpr/1.14.2/9598c17037e047d5a6fc8903c12e0a48/include", "-DNDEBUG", "-o", "build/.objs/afs/linux/x86_64/release/src/basic/config/config.cc.o", "src/basic/config/config.cc"],
-  "file": "src/basic/config/config.cc"
+  "arguments": ["/usr/bin/g++", "-c", "-m64", "-fvisibility=hidden", "-fvisibility-inlines-hidden", "-O3", "-std=c++23", "-Isrc", "-Iinclude", "-DSPDLOG_SHARED_LIB", "-DSPDLOG_COMPILED_LIB", "-DSPDLOG_FMT_EXTERNAL", "-I", "/home/gresces/.xmake/packages/f/ftxui/v6.1.9/e32f75b14e2841348a64fa1d2a17499f/include", "-I", "/home/gresces/.xmake/packages/b/boost_sml/v1.1.13/fb5b36505caf44c6a14d321bd3ad0d2c/include", "-I", "/home/gresces/.xmake/packages/t/taskflow/v4.0.0/2d8f4a8e9f674d2d87f2da1f3d90a596/include", "-I", "/home/gresces/.xmake/packages/c/cpr/1.14.2/9598c17037e047d5a6fc8903c12e0a48/include", "-DNDEBUG", "-o", "build/.objs/afs/linux/x86_64/release/src/basic/config/paths.cc.o", "src/basic/config/paths.cc"],
+  "file": "src/basic/config/paths.cc"
 },
 {
   "directory": "/home/gresces/Projects/AgentFromScratch/main/core",
-  "arguments": ["/usr/bin/g++", "-c", "-m64", "-fvisibility=hidden", "-fvisibility-inlines-hidden", "-O3", "-std=c++23", "-Isrc", "-Iinclude", "-DSPDLOG_SHARED_LIB", "-DSPDLOG_COMPILED_LIB", "-DSPDLOG_FMT_EXTERNAL", "-I", "/home/gresces/.xmake/packages/f/ftxui/v6.1.9/e32f75b14e2841348a64fa1d2a17499f/include", "-I", "/home/gresces/.xmake/packages/b/boost_sml/v1.1.13/fb5b36505caf44c6a14d321bd3ad0d2c/include", "-I", "/home/gresces/.xmake/packages/t/taskflow/v4.0.0/2d8f4a8e9f674d2d87f2da1f3d90a596/include", "-I", "/home/gresces/.xmake/packages/c/cpr/1.14.2/9598c17037e047d5a6fc8903c12e0a48/include", "-DNDEBUG", "-o", "build/.objs/afs/linux/x86_64/release/src/basic/config/paths.cc.o", "src/basic/config/paths.cc"],
-  "file": "src/basic/config/paths.cc"
+  "arguments": ["/usr/bin/g++", "-c", "-m64", "-fvisibility=hidden", "-fvisibility-inlines-hidden", "-O3", "-std=c++23", "-Isrc", "-Iinclude", "-DSPDLOG_SHARED_LIB", "-DSPDLOG_COMPILED_LIB", "-DSPDLOG_FMT_EXTERNAL", "-I", "/home/gresces/.xmake/packages/f/ftxui/v6.1.9/e32f75b14e2841348a64fa1d2a17499f/include", "-I", "/home/gresces/.xmake/packages/b/boost_sml/v1.1.13/fb5b36505caf44c6a14d321bd3ad0d2c/include", "-I", "/home/gresces/.xmake/packages/t/taskflow/v4.0.0/2d8f4a8e9f674d2d87f2da1f3d90a596/include", "-I", "/home/gresces/.xmake/packages/c/cpr/1.14.2/9598c17037e047d5a6fc8903c12e0a48/include", "-DNDEBUG", "-o", "build/.objs/afs/linux/x86_64/release/src/basic/config/config.cc.o", "src/basic/config/config.cc"],
+  "file": "src/basic/config/config.cc"
 },
 {
   "directory": "/home/gresces/Projects/AgentFromScratch/main/core",
@@ -23,11 +23,6 @@
   "directory": "/home/gresces/Projects/AgentFromScratch/main/core",
   "arguments": ["/usr/bin/g++", "-c", "-m64", "-fvisibility=hidden", "-fvisibility-inlines-hidden", "-O3", "-std=c++23", "-Isrc", "-Iinclude", "-DSPDLOG_SHARED_LIB", "-DSPDLOG_COMPILED_LIB", "-DSPDLOG_FMT_EXTERNAL", "-I", "/home/gresces/.xmake/packages/f/ftxui/v6.1.9/e32f75b14e2841348a64fa1d2a17499f/include", "-I", "/home/gresces/.xmake/packages/b/boost_sml/v1.1.13/fb5b36505caf44c6a14d321bd3ad0d2c/include", "-I", "/home/gresces/.xmake/packages/t/taskflow/v4.0.0/2d8f4a8e9f674d2d87f2da1f3d90a596/include", "-I", "/home/gresces/.xmake/packages/c/cpr/1.14.2/9598c17037e047d5a6fc8903c12e0a48/include", "-DNDEBUG", "-o", "build/.objs/afs/linux/x86_64/release/src/agent/loop/loop.cc.o", "src/agent/loop/loop.cc"],
   "file": "src/agent/loop/loop.cc"
-},
-{
-  "directory": "/home/gresces/Projects/AgentFromScratch/main/core",
-  "arguments": ["/usr/bin/g++", "-c", "-m64", "-fvisibility=hidden", "-fvisibility-inlines-hidden", "-O3", "-std=c++23", "-Isrc", "-Iinclude", "-DSPDLOG_SHARED_LIB", "-DSPDLOG_COMPILED_LIB", "-DSPDLOG_FMT_EXTERNAL", "-I", "/home/gresces/.xmake/packages/f/ftxui/v6.1.9/e32f75b14e2841348a64fa1d2a17499f/include", "-I", "/home/gresces/.xmake/packages/b/boost_sml/v1.1.13/fb5b36505caf44c6a14d321bd3ad0d2c/include", "-I", "/home/gresces/.xmake/packages/t/taskflow/v4.0.0/2d8f4a8e9f674d2d87f2da1f3d90a596/include", "-I", "/home/gresces/.xmake/packages/c/cpr/1.14.2/9598c17037e047d5a6fc8903c12e0a48/include", "-DNDEBUG", "-o", "build/.objs/afs/linux/x86_64/release/src/agent/context/context.cc.o", "src/agent/context/context.cc"],
-  "file": "src/agent/context/context.cc"
 },
 {
   "directory": "/home/gresces/Projects/AgentFromScratch/main/core",
@@ -51,11 +46,6 @@
 },
 {
   "directory": "/home/gresces/Projects/AgentFromScratch/main/core",
-  "arguments": ["/usr/bin/g++", "-c", "-m64", "-fvisibility=hidden", "-fvisibility-inlines-hidden", "-O3", "-std=c++23", "-Isrc", "-Iinclude", "-DSPDLOG_SHARED_LIB", "-DSPDLOG_COMPILED_LIB", "-DSPDLOG_FMT_EXTERNAL", "-I", "/home/gresces/.xmake/packages/f/ftxui/v6.1.9/e32f75b14e2841348a64fa1d2a17499f/include", "-I", "/home/gresces/.xmake/packages/b/boost_sml/v1.1.13/fb5b36505caf44c6a14d321bd3ad0d2c/include", "-I", "/home/gresces/.xmake/packages/t/taskflow/v4.0.0/2d8f4a8e9f674d2d87f2da1f3d90a596/include", "-I", "/home/gresces/.xmake/packages/c/cpr/1.14.2/9598c17037e047d5a6fc8903c12e0a48/include", "-DNDEBUG", "-o", "build/.objs/afs/linux/x86_64/release/src/main.cc.o", "src/main.cc"],
-  "file": "src/main.cc"
-},
-{
-  "directory": "/home/gresces/Projects/AgentFromScratch/main/core",
   "arguments": ["/usr/bin/g++", "-c", "-m64", "-fvisibility=hidden", "-fvisibility-inlines-hidden", "-O3", "-std=c++23", "-Isrc", "-Iinclude", "-DSPDLOG_SHARED_LIB", "-DSPDLOG_COMPILED_LIB", "-DSPDLOG_FMT_EXTERNAL", "-I", "/home/gresces/.xmake/packages/f/ftxui/v6.1.9/e32f75b14e2841348a64fa1d2a17499f/include", "-I", "/home/gresces/.xmake/packages/b/boost_sml/v1.1.13/fb5b36505caf44c6a14d321bd3ad0d2c/include", "-I", "/home/gresces/.xmake/packages/t/taskflow/v4.0.0/2d8f4a8e9f674d2d87f2da1f3d90a596/include", "-I", "/home/gresces/.xmake/packages/c/cpr/1.14.2/9598c17037e047d5a6fc8903c12e0a48/include", "-DNDEBUG", "-o", "build/.objs/afs/linux/x86_64/release/src/tui/input/input.cc.o", "src/tui/input/input.cc"],
   "file": "src/tui/input/input.cc"
 },
@@ -73,4 +63,9 @@
   "directory": "/home/gresces/Projects/AgentFromScratch/main/core",
   "arguments": ["/usr/bin/g++", "-c", "-m64", "-fvisibility=hidden", "-fvisibility-inlines-hidden", "-O3", "-std=c++23", "-Isrc", "-Iinclude", "-DSPDLOG_SHARED_LIB", "-DSPDLOG_COMPILED_LIB", "-DSPDLOG_FMT_EXTERNAL", "-I", "/home/gresces/.xmake/packages/f/ftxui/v6.1.9/e32f75b14e2841348a64fa1d2a17499f/include", "-I", "/home/gresces/.xmake/packages/b/boost_sml/v1.1.13/fb5b36505caf44c6a14d321bd3ad0d2c/include", "-I", "/home/gresces/.xmake/packages/t/taskflow/v4.0.0/2d8f4a8e9f674d2d87f2da1f3d90a596/include", "-I", "/home/gresces/.xmake/packages/c/cpr/1.14.2/9598c17037e047d5a6fc8903c12e0a48/include", "-DNDEBUG", "-o", "build/.objs/afs/linux/x86_64/release/src/tui/app.cc.o", "src/tui/app.cc"],
   "file": "src/tui/app.cc"
+},
+{
+  "directory": "/home/gresces/Projects/AgentFromScratch/main/core",
+  "arguments": ["/usr/bin/g++", "-c", "-m64", "-fvisibility=hidden", "-fvisibility-inlines-hidden", "-O3", "-std=c++23", "-Isrc", "-Iinclude", "-DSPDLOG_SHARED_LIB", "-DSPDLOG_COMPILED_LIB", "-DSPDLOG_FMT_EXTERNAL", "-I", "/home/gresces/.xmake/packages/f/ftxui/v6.1.9/e32f75b14e2841348a64fa1d2a17499f/include", "-I", "/home/gresces/.xmake/packages/b/boost_sml/v1.1.13/fb5b36505caf44c6a14d321bd3ad0d2c/include", "-I", "/home/gresces/.xmake/packages/t/taskflow/v4.0.0/2d8f4a8e9f674d2d87f2da1f3d90a596/include", "-I", "/home/gresces/.xmake/packages/c/cpr/1.14.2/9598c17037e047d5a6fc8903c12e0a48/include", "-DNDEBUG", "-o", "build/.objs/afs/linux/x86_64/release/src/main.cc.o", "src/main.cc"],
+  "file": "src/main.cc"
 }]

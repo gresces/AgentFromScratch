@@ -60,19 +60,21 @@ Config template (`~/.config/afs/config.json`):
 - **TUI interface** built with FTXUI — status bar, scrollable messages, sidebar (quick index + file browser), draggable splitter.
 - **Agent / Shell modes** — toggle with `Tab`. Shell commands execute via `/bin/bash -lc` in your working directory.
 - **`@` file completion** — type `@` followed by a path prefix; `↑`/`↓` to navigate candidates, `Tab` to complete.
-- **Plugin system** — load `.so` plugins at startup. Plugins register tools the Agent can call.
+- **Plugin system** — load runtime and tool plugins at startup. Context and Loop are separate runtime plugin types; tools are callable by the Agent.
 - **OpenAI-compatible** — works with any OpenAI-compatible API (DeepSeek, local LLMs, etc.).
 - **Tree-structured agents** — parent agents own child sub-agents via `unique_ptr`; recursive tool inheritance.
 
 ## Built-in Plugins
 
-| Plugin | Tools | Description |
-|--------|-------|-------------|
-| `compute` | `add`, `sub`, `mul`, `div` | Binary arithmetic |
-| `bash` | `execute_bash` | Shell command execution |
-| `file` | `file_read`, `file_write`, `file_exists` | File I/O (1 MiB read cap) |
+| Type | Plugin | Capability | Description |
+|------|--------|------------|-------------|
+| `context` | `simple` | `AFS::Context` | Message history and token accounting |
+| `loop` | `simple` | `AFS::Loop` | LLM/tool execution loop |
+| `tool` | `compute` | `compute` | Binary arithmetic |
+| `tool` | `bash` | `execute_bash` | Shell command execution |
+| `tool` | `file` | `file_read`, `file_write`, `file_exists` | File I/O (1 MiB read cap) |
 
-Plugins are compiled separately and installed to `${XDG_CONFIG_HOME:-~/.config}/afs/plugins/tool/`.
+Plugins are compiled separately and installed to `${XDG_CONFIG_HOME:-~/.config}/afs/plugins/<type>/`.
 
 ## Build Plugins
 
@@ -80,8 +82,10 @@ Plugins are compiled separately and installed to `${XDG_CONFIG_HOME:-~/.config}/
 cd plugins
 ./build.sh              # build all
 ./build.sh install      # build + install
-./build.sh file         # build single plugin
-./build.sh file install # build + install single
+./build.sh context/simple      # build single Context runtime plugin
+./build.sh loop/simple install # build + install single Loop runtime plugin
+./build.sh file         # build single tool plugin
+./build.sh file install # build + install single tool plugin
 ```
 
 ## Project Structure
@@ -92,6 +96,8 @@ AgentFromScratch/
 │   ├── include/              #   Public API headers (plugin dev entry point)
 │   └── src/                  #   Source (main, agent, loop, config, models, TUI, plugins)
 ├── plugins/                  # Plugin source (independent compilation)
+│   ├── context/              #   Context runtime plugin
+│   ├── loop/                 #   Loop runtime plugin
 │   └── tools/                #   Tool plugins (compute, bash, file, …)
 ├── bin/                      # Build output (afs binary)
 ├── install.sh                # One-shot install script

@@ -25,8 +25,8 @@ Agent 核心节点，程序中的 Agent 之间为树状结构。
 7. 主 Agent（level==0）构造时自动调用 `registerTools()` 注册所有已加载工具插件。
 
 Agent 拥有三个核心组件：
-- `AFS_Loop` — 驱动 LLM 交互和工具调用的状态机。
-- `AFS_Context` — 管理对话消息历史。
+- `AFS_Loop` — 运行时插件创建的循环接口，默认实现由 `loop` 类型插件提供（自动发现第一个）。
+- `AFS_Context` — 运行时插件创建的上下文接口，默认实现由 `context` 类型插件提供（自动发现第一个）。
 - `AFS_Model` — 执行实际的 LLM API 调用。
 
 ### 接口
@@ -84,9 +84,9 @@ Agent 拥有三个核心组件：
 | `uuid_` | `std::string` | 8 位十六进制 UUID，构造时通过 `generateUuid8()` 自增生成 |
 | `sub_agent_nodes_` | `std::vector<std::unique_ptr<AFS_Agent>>` | 子节点列表，独占所有权 |
 | `tool_registry_` | `AFS_ToolRegistry` | 工具注册表，子 Agent 构造时拷贝父级 |
-| `context_` | `AFS_Context` | 上下文管理器，构造时自动初始化默认系统提示词 |
+| `context_` | `std::unique_ptr<AFS_Context>` | 上下文接口实例，由 context 类型插件创建 |
 | `model_` | `std::unique_ptr<AFS_Model>` | 模型实例，通过 `setModel()` 设置 |
-| `loop_` | `AFS_Loop` | 核心循环状态机，驱动 LLM 交互和工具调用 |
+| `loop_` | `std::unique_ptr<AFS_Loop>` | 循环接口实例，由 loop 类型插件创建 |
 | `loaded_plugins_` | `std::vector<std::pair<AFS::PluginType,std::string>>` | 本 Agent 加载的插件（析构时释放引用） |
 
 ### 私有方法
@@ -145,8 +145,8 @@ main_agent (unique_ptr, 外部持有)
 
 | 目录 | 职责 |
 |------|------|
-| `context/` | 上下文管理器（`AFS_Context`） |
-| `loop/` | Agent 核心循环（`AFS_Loop`），基于 boost::sml 状态机 |
+| `context/` | `AFS_Context` 接口兼容包装；默认实现位于 `plugins/context/` 目录下第一个插件 |
+| `loop/` | `AFS_Loop` 接口兼容包装与配置加载；默认实现位于 `plugins/loop/` 目录下第一个插件 |
 | `tool/` | 工具调用数据结构（`AFS_ToolSpec`、`AFS_ToolCall`、`AFS_ToolResult`） |
 
 ## 约定
@@ -154,10 +154,11 @@ main_agent (unique_ptr, 外部持有)
 - `AFS_Agent` 禁止拷贝和赋值（`= delete`）。
 - 构造函数私有，只能通过 `createMain()` 或 `genSubNode()` 创建实例。
 - `genSubNode()` 返回的引用与父节点生命周期绑定，父节点销毁后引用失效。
-- `AFS_Loop` 作为 `AFS_Agent` 的私有成员存在，通过 `run()` 方法调用。
+- `AFS_Loop` 由插件管理器创建，作为 `AFS_Agent` 的私有 `unique_ptr` 通过 `run()` 调用。
 - `AFS_Model` 通过 `setModel()` 注入，Agent 独占所有权。
 - `AFS_Loop::run()` 仅接收精确依赖：`Context&`、`ToolRegistry&`、`const Model&`、`uuid`。
 - Loop 只管状态机逻辑和请求构建，Context 管消息历史，Agent 管理两者。
+- 创建 Agent 前必须已加载 context 和 loop 类型插件（`plugins/build.sh install` 安装到对应目录）。
 
 ## 发布-订阅机制
 

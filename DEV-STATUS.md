@@ -13,8 +13,9 @@ Agent 核已完成最小闭环，可在终端通过 TUI 界面运行。插件系
 - 实现 `AFS_Model` / `AFS_Model_OpenAICompatible` 模型抽象层，支持 OpenAI 兼容 API（DeepSeek 等）。
 - 实现 `AFS_Agent` 核心节点（树状结构、shared_ptr RAII）。
 - 实现插件系统：`AFS::Plugin` 基类 + `AFS_PluginLoader` + 启动自动发现。
-- 实现 `AFS_Loop` 对话循环（boost::sml 状态机）。
-- 实现 `AFS_Context` 上下文管理与消息历史。
+- 实现 `AFS::Context` / `AFS::Loop` 运行时插件接口。
+- 实现 `ContextPluginSimple` 上下文插件（消息历史与 token 计数）。
+- 实现 `LoopPluginSimple` 对话循环插件（boost::sml 状态机）。
 - 实现 `AFS_ToolRegistry` 工具注册与执行。
 - 实现 `AFS_Logger` 日志输出（stderr + 内存缓冲）。
 - 实现 FTXUI TUI 界面：
@@ -29,6 +30,8 @@ Agent 核已完成最小闭环，可在终端通过 TUI 界面运行。插件系
 - 生成 `compile_commands.json` 辅助 LSP。
 
 ## 最近变更
+- **2026-07-01**：将 Context 和 Loop 从 core 值成员实现抽出为独立 `context` / `loop` 类型运行时插件：新增公共 `afs/context.hh`、`afs/loop.hh` 接口，`AFS_Agent` 改为通过 `AFS_PluginManager` 创建 `ContextPluginSimple` / `LoopPluginSimple`；顶层 `plugins/build.sh` 扩展为自动发现 `context/`、`loop/`、`tools/`、`skills/`，Context/Loop 插件使用 xmake 管理构建依赖。
+
 - **2026-06-30**：实现 TUI 配置模式：`Ctrl+P` 进入配置浏览器查看 JSON 配置（分类/项目导航），`Ctrl+S` 保存 `sidebar_ratio` 并重载模型配置，`Esc` 返回聊天界面。新增 `AFS_TuiRenderConfigMode` 布局、`refreshConfigView`/`saveAndReloadConfig`/`moveConfigSelection` 方法及相应 `AFS_TuiConfigView`/`AFS_TuiConfigCategory`/`AFS_TuiConfigItem` 数据结构。
 
 - **2026-06-30**：新增 token 计数器：模型 `countTokens()` 虚方法（DeepSeek 英文≈0.3/字符中文≈0.6/字符），Context 累计 token，状态栏显示格式化数量（123/100K/2.3M），配置 `context_limit` 支持容量警告（超过 80% 显示 `!`）。

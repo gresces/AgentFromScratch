@@ -1,9 +1,11 @@
 #include "agent/agent.hh"
 #include "plugins/plugin_manager.hh"
+#include "basic/log/logger.hh"
 
 #include <afs/common.hh>
 
 #include <algorithm>
+#include <exception>
 
 // ---- 全局计数器：确保主 Agent 只创建一次 ----------------------------
 
@@ -11,16 +13,53 @@ namespace {
 
 bool g_main_created = false;
 
+void initRuntimePlugins(std::unique_ptr<AFS_Context>& context, std::unique_ptr<AFS_Loop>& loop) {
+    auto pm = AFS_PluginManager::instance();
+    context = pm->createContext();
+    loop = pm->createLoop();
+}
+
+// ---- LoggerLoopEvents -------------------------------------------------------
+class LoggerLoopEvents final : public AFS::LoopEvents {
+  public:
+    void publishStart() override { logger().publishStart(); }
+    void publishAssistantMessage(const std::string& message_print) override {
+        logger().publishAssistantMessage(message_print);
+    }
+    void publishAssistantDelta(const std::string& delta) override {
+        logger().publishAssistantDelta(delta);
+    }
+    void publishReasoningMessage(const std::string& reasoning) override {
+        logger().publishReasoningMessage(reasoning);
+    }
+    void publishReasoningDelta(const std::string& delta) override {
+        logger().publishReasoningDelta(delta);
+    }
+    void publishToolResult(const std::string& message_print) override {
+        logger().publishToolResult(message_print);
+    }
+    void publishError(const std::string& agent_uuid, const std::string& error) override {
+        logger().publishError(error);
+        AFS_LOG_ERROR(agent_uuid, kRoleLoop, error);
+    }
+    void publishComplete(const std::string& reply) override { logger().publishComplete(reply); }
+
+  private:
+    AFS_Logger& logger() { return AFS_Logger::instance(); }
+};
+
 } // namespace
 
 // ---- AFS_Agent --------------------------------------------------------------
 
 AFS_Agent::AFS_Agent(unsigned level) : level_(level), uuid_(AFS::uuid8()) {
+    initRuntimePlugins(context_, loop_);
     initDefaultContext();
 }
 
 AFS_Agent::AFS_Agent(unsigned level, const AFS_ToolRegistry& parent_tools)
     : level_(level), uuid_(AFS::uuid8()), tool_registry_(parent_tools) {
+    initRuntimePlugins(context_, loop_);
     initDefaultContext();
 }
 
@@ -38,7 +77,7 @@ AFS_Agent::~AFS_Agent() {
 
 void AFS_Agent::initDefaultContext() {
     // 默认系统提示词，子 Agent 可根据任务覆盖
-    context_.addMessage(
+    context_->addMessage(
         AFS::SystemMessage("You are a helpful assistant. Use tools when appropriate."));
 }
 
@@ -47,9 +86,15 @@ std::unique_ptr<AFS_Agent> AFS_Agent::createMain() {
         return nullptr;
     }
     g_main_created = true;
-    auto agent = std::unique_ptr<AFS_Agent>(new AFS_Agent(0));
-    agent->registerTools();
-    return agent;
+    try {
+        auto agent = std::unique_ptr<AFS_Agent>(new AFS_Agent(0));
+        agent->registerTools();
+        return agent;
+    } catch (const std::exception& e) {
+        AFS_LOG_ERROR(kRoleMain, "", std::string("创建 Agent 失败: ") + e.what());
+        g_main_created = false;
+        return nullptr;
+    }
 }
 
 AFS_Agent& AFS_Agent::genSubNode() {
@@ -135,7 +180,7 @@ void AFS_Agent::registerTools() {
             }
             tool_prompt += "\n";
         }
-        context_.addMessage(AFS::SystemMessage(std::move(tool_prompt)));
+        context_->addMessage(AFS::SystemMessage(std::move(tool_prompt)));
     }
 }
 
@@ -155,7 +200,7 @@ void AFS_Agent::loadExtraTool(AFS::PluginType type, const std::string& plugin_na
         if (!cap.input_schema.empty()) {
             tool_prompt += " (input: " + cap.input_schema + ")";
         }
-        context_.addMessage(AFS::SystemMessage(std::move(tool_prompt)));
+        context_->addMessage(AFS::SystemMessage(std::move(tool_prompt)));
     }
 }
 
@@ -201,16 +246,19 @@ void AFS_Agent::fixSubtreeLevels(AFS_Agent& node) {
 
 void AFS_Agent::setModel(std::unique_ptr<AFS_Model> model) {
     model_ = std::move(model);
-    context_.setTokenCounter(
-        [raw = model_.get()](const std::string& text) { return raw->countTokens(text); });
-    context_.recomputeTokens(*model_);
+    auto token_counter = [raw = model_.get()](const std::string& text) {
+        return raw->countTokens(text);
+    };
+    context_->setTokenCounter(token_counter);
+    context_->recomputeTokens(std::move(token_counter));
 }
 
 void AFS_Agent::setLoopConfig(AFS_AgentLoopConfig config) {
-    loop_.setConfig(config);
+    loop_->setConfig(config);
 }
 
 std::string AFS_Agent::run() {
     if (!model_) return "";
-    return loop_.run(context_, tool_registry_, *model_, uuid_);
+    LoggerLoopEvents events;
+    return loop_->run(*context_, tool_registry_, *model_, events, uuid_);
 }

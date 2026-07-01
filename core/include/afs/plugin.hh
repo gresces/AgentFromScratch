@@ -1,15 +1,18 @@
 #pragma once
+#include "context.hh"
+#include "loop.hh"
 
 #include <cstdint>
 
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace AFS {
 
 // ---- ABI 版本 ---------------------------------------------------------------
-inline constexpr std::uint32_t PluginAbiVersion = 1;
+inline constexpr std::uint32_t PluginAbiVersion = 3;
 
 // ---- 导出宏 -----------------------------------------------------------------
 #if defined(_WIN32)
@@ -23,6 +26,8 @@ enum class PluginType : std::uint32_t {
     Generic = 0,
     Tool = 1,
     Skill = 2,
+    Context = 3,
+    Loop = 4,
 };
 
 // ---- Plugin -----------------------------------------------------------------
@@ -49,6 +54,11 @@ class Plugin {
         std::function<std::string(const std::string&)> func;
     };
     virtual std::vector<ToolCap> toolCapabilities() const { return {}; }
+
+    // ---- 运行时插件能力（默认不提供） ----------------------------------------
+    // context / loop 类型插件覆盖这些工厂方法（命名不影响发现）。
+    virtual std::unique_ptr<Context> createContext() const { return nullptr; }
+    virtual std::unique_ptr<Loop> createLoop() const { return nullptr; }
 };
 
 // ---- C ABI 导出签名 ---------------------------------------------------------

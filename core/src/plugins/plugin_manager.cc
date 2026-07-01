@@ -5,6 +5,7 @@
 #include <cctype>
 #include <filesystem>
 #include <dlfcn.h>
+#include <stdexcept>
 #include <nlohmann/json.hpp>
 
 // ---- helpers -----------------------------------------------------------------
@@ -18,12 +19,23 @@ std::string capitalize(const std::string& s) {
     return out;
 }
 
+std::string normalizePluginName(const std::string& s) {
+    if (s.empty()) return s;
+    std::string out = s;
+    out[0] = static_cast<char>(std::tolower(out[0]));
+    return out;
+}
+
 std::string typeName(AFS::PluginType type) {
     switch (type) {
     case AFS::PluginType::Tool:
         return "Tool";
     case AFS::PluginType::Skill:
         return "Skill";
+    case AFS::PluginType::Context:
+        return "Context";
+    case AFS::PluginType::Loop:
+        return "Loop";
     default:
         return "Generic";
     }
@@ -163,6 +175,10 @@ std::string AFS_PluginManager::pluginDirName(AFS::PluginType type) const {
         return "tool";
     case AFS::PluginType::Skill:
         return "skill";
+    case AFS::PluginType::Context:
+        return "context";
+    case AFS::PluginType::Loop:
+        return "loop";
     default:
         return "generic";
     }
@@ -187,31 +203,59 @@ void AFS_PluginManager::loadFromDirectory(const std::filesystem::path& dir) {
             std::string plugin_type_str;
             std::string plugin_name;
             for (const auto& t :
-                 {AFS::PluginType::Tool, AFS::PluginType::Skill, AFS::PluginType::Generic}) {
+                 {AFS::PluginType::Tool, AFS::PluginType::Skill, AFS::PluginType::Context,
+                  AFS::PluginType::Loop, AFS::PluginType::Generic}) {
                 std::string prefix = typeName(t) + "Plugin";
                 if (filename.starts_with(prefix)) {
                     plugin_type_str = typeName(t);
-                    plugin_name = filename.substr(prefix.size());
+                    plugin_name = normalizePluginName(filename.substr(prefix.size()));
                     break;
                 }
             }
             if (plugin_name.empty()) continue;
 
             AFS::PluginType type;
-            if (plugin_type_str == "Tool")
+            if (plugin_type_str == "Tool") {
                 type = AFS::PluginType::Tool;
-            else if (plugin_type_str == "Skill")
+            } else if (plugin_type_str == "Skill") {
                 type = AFS::PluginType::Skill;
-            else
+            } else if (plugin_type_str == "Context") {
+                type = AFS::PluginType::Context;
+            } else if (plugin_type_str == "Loop") {
+                type = AFS::PluginType::Loop;
+            } else if (plugin_type_str == "Generic") {
+                type = AFS::PluginType::Generic;
+            } else {
                 continue;
+            }
 
             loadPlugin(type, plugin_name);
         }
     }
 }
 
+AFS::Plugin& AFS_PluginManager::requirePlugin(AFS::PluginType type,
+                                              const std::string& plugin_name) {
+    if (plugin_dir_.empty()) {
+        plugin_dir_ = AFS_DefaultPluginDirectory();
+    }
+
+    const std::string normalized_name = normalizePluginName(plugin_name);
+    const std::string key = makeKey(type, normalized_name);
+    auto it = plugins_.find(key);
+    if (it == plugins_.end()) {
+        loadPlugin(type, normalized_name);
+        it = plugins_.find(key);
+    }
+    if (it == plugins_.end()) {
+        throw std::runtime_error("plugin not loaded: " + key);
+    }
+    return it->second.loaded.get();
+}
+
 void AFS_PluginManager::loadPlugin(AFS::PluginType type, const std::string& plugin_name) {
-    std::string key = makeKey(type, plugin_name);
+    const std::string normalized_name = normalizePluginName(plugin_name);
+    std::string key = makeKey(type, normalized_name);
 
     auto it = plugins_.find(key);
     if (it != plugins_.end()) {
@@ -219,7 +263,7 @@ void AFS_PluginManager::loadPlugin(AFS::PluginType type, const std::string& plug
         return;
     }
 
-    std::string filename = pluginFileName(type, plugin_name);
+    std::string filename = pluginFileName(type, normalized_name);
     auto path = plugin_dir_ / pluginDirName(type) / filename;
 
     AFS_LoadedPlugin loaded = AFS_PluginLoader::load(path.string());
@@ -228,7 +272,7 @@ void AFS_PluginManager::loadPlugin(AFS::PluginType type, const std::string& plug
 }
 
 void AFS_PluginManager::unloadPlugin(AFS::PluginType type, const std::string& plugin_name) {
-    std::string key = makeKey(type, plugin_name);
+    std::string key = makeKey(type, normalizePluginName(plugin_name));
     auto it = plugins_.find(key);
     if (it == plugins_.end()) return;
 
@@ -236,6 +280,50 @@ void AFS_PluginManager::unloadPlugin(AFS::PluginType type, const std::string& pl
     if (it->second.ref_count == 0) {
         plugins_.erase(it);
     }
+}
+
+AFS::Plugin& AFS_PluginManager::requireFirstPlugin(AFS::PluginType type) {
+    // 先从已加载插件中查找
+    for (auto& [key, entry] : plugins_) {
+        if (entry.loaded->type() == type) {
+            return entry.loaded.get();
+        }
+    }
+
+    // 未加载则扫描目录取第一个匹配的
+    if (!plugin_dir_.empty()) {
+        auto type_dir = plugin_dir_ / pluginDirName(type);
+        if (std::filesystem::exists(type_dir) && std::filesystem::is_directory(type_dir)) {
+            for (const auto& file_entry : std::filesystem::directory_iterator(type_dir)) {
+                if (!file_entry.is_regular_file()) continue;
+                std::string filename = file_entry.path().filename().string();
+                std::string prefix = typeName(type) + "Plugin";
+                if (filename.starts_with(prefix)) {
+                    std::string name = normalizePluginName(filename.substr(prefix.size()));
+                    loadPlugin(type, name);
+                    return plugins_.at(makeKey(type, name)).loaded.get();
+                }
+            }
+        }
+    }
+
+    throw std::runtime_error("no " + typeName(type) + " plugin found");
+}
+
+std::unique_ptr<AFS::Context> AFS_PluginManager::createContext() {
+    auto context = requireFirstPlugin(AFS::PluginType::Context).createContext();
+    if (!context) {
+        throw std::runtime_error("context plugin did not create a context");
+    }
+    return context;
+}
+
+std::unique_ptr<AFS::Loop> AFS_PluginManager::createLoop() {
+    auto loop = requireFirstPlugin(AFS::PluginType::Loop).createLoop();
+    if (!loop) {
+        throw std::runtime_error("loop plugin did not create a loop");
+    }
+    return loop;
 }
 
 std::vector<AFS::Plugin::ToolCap> AFS_PluginManager::allToolCaps() const {
@@ -250,7 +338,7 @@ std::vector<AFS::Plugin::ToolCap> AFS_PluginManager::allToolCaps() const {
 
 std::vector<AFS::Plugin::ToolCap>
 AFS_PluginManager::toolCaps(AFS::PluginType type, const std::string& plugin_name) const {
-    std::string key = makeKey(type, plugin_name);
+    std::string key = makeKey(type, normalizePluginName(plugin_name));
     auto it = plugins_.find(key);
     if (it == plugins_.end()) return {};
     return it->second.loaded->toolCapabilities();
