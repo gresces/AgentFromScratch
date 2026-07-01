@@ -15,7 +15,7 @@
 class AFS_Loop {
   public:
     // 最大迭代次数（防止无限循环）
-    static constexpr unsigned kMaxIterations = 10;
+    static constexpr unsigned kMaxIterations = 50;
 
     // 运行完整循环：与 LLM 交互直到获得最终回复。
     //   context — 对话历史，循环中会追加 Assistant/Tool 消息

@@ -108,7 +108,7 @@ agent.context().addMessage(AFS::AssistantMessage("你好！有什么可以帮助
 4. 执行工具调用，将结果写回上下文
 5. 循环直到模型返回纯文本回复（无工具调用）
 
-最大迭代次数 `kMaxIterations = 10`，防止无限循环。`ParsedResponse` 结构体分离 content、reasoning 和 tool_calls。
+最大迭代次数 `kMaxIterations = 50`，防止无限循环。`ParsedResponse` 结构体分离 content、reasoning 和 tool_calls。
 
 #### agent/tool/ — 工具注册与执行（AFS_ToolRegistry）
 
