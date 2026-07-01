@@ -7,8 +7,8 @@ Agent 核的源代码目录，按职责分层组织。所有 C++ 代码集中于
 | 目录 | 职责 |
 |------|------|
 | `basic/` | 基础设施模块 |
-| ├─ `config/` | 全局配置（`AFS_Config`、`AFS_ModelConfig`）与默认用户配置目录路径解析 |
-| ├─ `models/` | 模型抽象与实现（`AFS_Model`、OpenAI 兼容、DeepSeek） |
+| ├─ `config/` | 动态配置基础设施（`AFS_ConfigManager`、schema 注册表）与默认用户配置目录路径解析 |
+| ├─ `models/` | 模型抽象与实现（`AFS_Model`、OpenAI 兼容、DeepSeek）及模型配置结构 |
 | `agent/` | Agent 核心定义与运行循环 |
 | ├─ `agent.hh` / `agent.cc` | Agent 节点：树结构、工具注册、子 Agent 管理 |
 | ├─ `context/` | 上下文管理器：消息历史累积、LLM 请求构建 |
@@ -36,20 +36,24 @@ Agent 核的源代码目录，按职责分层组织。所有 C++ 代码集中于
 
 ### basic/ — 基础设施
 
-#### basic/config/ — 全局配置
+#### basic/config/ — 动态配置基础设施
 
-从 JSON 配置文件加载 Agent 运行所需的全部参数。核心类型：
+只负责 JSON 文件、路径写回和 schema 注册表。`config/` 不声明模型、TUI 或插件配置结构；模块注册后才会出现在 `AFS_ConfigManager::schemas()` 中。
 
-- `AFS_ModelConfig` — 单个模型配置（name、base_url、api_key、model）
-- `AFS_ModelsConfig` — 模型分组（`llms` 和 `embeddings` 两个列表）
-- `AFS_Config` — 顶层配置对象，`AFS_Config::loadFromFile(path)` 返回 `std::optional<AFS_Config>`
+核心类型：
+
+- `AFS_ConfigManager` — 进程级配置单例，加载/保存原始 JSON。
+- `AFS_ConfigSchema` — 模块暴露给配置浏览器的字段结构。
+- `AFS_ConfigFieldSpec` — 单个可编辑字段描述。
+
+模型配置读取流程由 models 模块负责：
 
 ```cpp
-auto config = AFS_Config::loadFromFile("config.json");
-if (!config) { /* 加载失败处理 */ }
-for (const auto& llm : config->models().llms) {
-    // 遍历所有 LLM 配置
-}
+AFS_RegisterModelConfigSchemas();
+auto& config = AFS_ConfigManager::instance();
+std::string error;
+if (!config.loadFromFile("config.json", error)) return;
+auto models = AFS_LoadModelsConfig(config);
 ```
 
 #### basic/models/ — 模型抽象

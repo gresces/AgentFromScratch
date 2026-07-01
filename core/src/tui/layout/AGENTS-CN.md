@@ -54,7 +54,7 @@ struct AFS_TuiFileCandidates {
     std::vector<std::string> labels;
 };
 
-ftxui::InputOption AFS_TuiInputOption();
+ftxui::InputOption AFS_TuiInputOption(int* cursor_position);
 ftxui::Element AFS_TuiRenderStatus(const AFS_TuiStatusView& view);
 ftxui::Element AFS_TuiRenderMessages(const std::vector<TuiMessage>& messages);
 ftxui::Element AFS_TuiRenderQuickIndex(std::vector<AFS_TuiQuickIndexEntry>& entries);
@@ -88,8 +88,7 @@ TUI 默认使用英文文案：`Ready`、`Agent running ...`、`Shell ready`、`
 - Tool 消息的 `call_id=...` 放在 header 的 `detail` 中，正文只显示 JSON 或输出内容。
 - Assistant 正文不显示 `[assistant]` 前缀。
 - 内容使用 `paragraph()` 自动换行。
-- 输入栏通过 `InputOption::transform` 去除反转背景，只使用 `dim`；不要加 `underlined`。
-- 输入提示符：Agent 模式为 `>`，Shell 模式为 `$`。
+- 输入栏通过 `InputOption::cursor_position` 绑定调用方保存的真实光标位置；`InputOption::transform` 只控制聚焦样式（聚焦加粗、未聚焦 `dim`），不叠加外层 cursor decorator，避免多行输入时光标位置偏移。不使用反转背景或下划线。
 - 输入栏下方可显示 `@` 文件候选列表；候选区最多显示 6 项，通过 `selected_index` 高亮当前项，本模块不处理选择或改写输入。
 - Quick index 标题使用英文 `Quick index`；无用户消息时显示 `No user messages`。
 - 文件夹目录标题使用英文 `Directory`；可展开目录显示 `[+] name` / `[-] name`，不可展开目录显示 `[D] name`，文件显示 `[F] name`，子项按 `depth` 缩进。

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "basic/config/config.hh"
 #include "tui/agent/bridge.hh"
 #include "tui/layout/layout.hh"
 #include <nlohmann/json.hpp>
@@ -10,8 +11,24 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <optional>
 #include <set>
 #include <vector>
+
+// ---- AFS_TuiConfig -----------------------------------------------------------
+// TUI 模块自己的配置结构；config 模块只保存 JSON，不声明这些类型。
+struct AFS_TuiLayoutConfig {
+    double sidebar_ratio = 0.35;
+
+    static AFS_ConfigSchema configSchema();
+};
+
+struct AFS_TuiConfig {
+    AFS_TuiLayoutConfig layout;
+};
+
+void from_json(const nlohmann::json& j, AFS_TuiLayoutConfig& layout);
+void from_json(const nlohmann::json& j, AFS_TuiConfig& tui);
 
 // ---- AFS_TuiApp --------------------------------------------------------------
 // FTXUI terminal frontend for the Agent core.
@@ -23,6 +40,12 @@
 class AFS_TuiApp {
   public:
     static std::unique_ptr<AFS_TuiApp> create(const std::string& config_path);
+
+    // Register and read only TUI-owned config fields.
+    static void registerConfigSchema();
+    static std::optional<AFS_TuiConfig> loadConfig(const AFS_Config& config);
+    static std::optional<AFS_TuiConfig> loadConfig(const AFS_ConfigManager& manager);
+    static bool saveSidebarRatio(const std::filesystem::path& path, double ratio);
 
     // Run the blocking FTXUI event loop. Esc requires a second press to exit.
     void run();
@@ -68,6 +91,8 @@ class AFS_TuiApp {
     nlohmann::json config_root_;
     std::string config_status_;
     std::string config_edit_value_;
+    int input_cursor_position_ = 0;
+    int config_edit_cursor_position_ = 0;
     int file_candidate_index_ = 0;
     int scroll_position_ = 1000;
     int spinner_frame_ = 0;

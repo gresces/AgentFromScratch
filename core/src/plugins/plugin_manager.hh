@@ -2,12 +2,28 @@
 
 #include "afs/plugin.hh"
 #include "plugins/plugin_loader.hh"
+#include "basic/config/config.hh"
 
 #include <filesystem>
+#include <optional>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+// ---- AFS_PluginRuntimeConfig --------------------------------------------------
+struct AFS_PluginRuntimeConfig {
+    std::string directory;
+
+    static AFS_ConfigSchema configSchema();
+};
+
+void from_json(const nlohmann::json& j, AFS_PluginRuntimeConfig& config);
+void AFS_RegisterPluginConfigSchemas();
+std::optional<AFS_PluginRuntimeConfig> AFS_LoadPluginRuntimeConfig(const AFS_Config& config);
+std::optional<AFS_PluginRuntimeConfig>
+AFS_LoadPluginRuntimeConfig(const AFS_ConfigManager& manager);
+std::optional<AFS_PluginRuntimeConfig> AFS_LoadPluginRuntimeConfig();
 
 // ---- AFS_PluginManager -------------------------------------------------------
 // 全局插件管理器（单例），管理插件的加载、卸载和引用计数。

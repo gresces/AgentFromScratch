@@ -126,7 +126,7 @@ AgentFromScratch/
 │       │
 │       ├── basic/            ← 基础设施模块
 │       │   ├── AGENTS-CN.md
-│       │   ├── config/       ← AFS_Config 配置模块
+│       │   ├── config/       ← 动态配置管理器与 schema 注册表
 │       │   │   └── AGENTS-CN.md
 │       │   └── models/       ← 模型抽象层
 │       │       └── AGENTS-CN.md
@@ -189,7 +189,7 @@ ${XDG_CONFIG_HOME:-~/.config}/afs/
 | 局部变量 / 字段 | `snake_case` | `tool_registry_`、`api_key_` |
 | 私有成员 | `snake_case` + 尾下划线 | `level_`、`uuid_` |
 | 公开常量 | `PascalCase` | `PluginAbiVersion` |
-| 内部类型（非 AFS 命名空间） | `AFS_` 前缀 + PascalCase | `AFS_Config`、`AFS_ToolRegistry` |
+| 内部类型（非 AFS 命名空间） | `AFS_` 前缀 + PascalCase | `AFS_ConfigManager`、`AFS_ToolRegistry` |
 | 公共 API 类型（AFS 命名空间） | `AFS::` 前缀 + PascalCase | `AFS::Message`、`AFS::Plugin` |
 
 ### 代码风格
@@ -291,7 +291,7 @@ AFS_PLUGIN_EXPORT void destroyPlugin(AFS::Plugin* p) { delete p; }
               ├── argc == 1 → AFS_TuiApp::create(default config) → run()
               ├── argc == 2 → AFS_TuiApp::create(argv[1]) → run()
               └── argc >= 3 → runConsole(argv[1], argv[2])
-              ├── AFS_Config::loadFromFile(config.json)
+              ├── AFS_ConfigManager::loadFromFile(config.json) + 模块 typed loader
               ├── AFS_PluginManager::instance() → loadFromDirectory(default plugin dir)
               ├── AFS_Agent::createMain() → registerTools()
               │     └── setModel(createModel(config))
@@ -325,7 +325,7 @@ AFS_PLUGIN_EXPORT void destroyPlugin(AFS::Plugin* p) { delete p; }
 | `core/include/` | `core/include/AGENTS-CN.md` | 公共 API 文档（类型定义、插件开发） |
 | `core/src/` | `core/src/AGENTS-CN.md` | 源码分层约定 |
 | `core/src/basic/` | `core/src/basic/AGENTS-CN.md` | 基础设施模块概览 |
-| `core/src/basic/config/` | `core/src/basic/config/AGENTS-CN.md` | AFS_Config 配置模块 |
+| `core/src/basic/config/` | `core/src/basic/config/AGENTS-CN.md` | 动态配置管理器与 schema 注册表 |
 | `core/src/basic/models/` | `core/src/basic/models/AGENTS-CN.md` | 模型抽象层（DeepSeek、OpenAI-compatible） |
 | `core/src/agent/` | `core/src/agent/AGENTS-CN.md` | AFS_Agent 类、树状结构、所有权模型 |
 | `core/src/agent/loop/` | `core/src/agent/loop/AGENTS-CN.md` | AFS_Loop 对话循环（boost::sml 状态机） |

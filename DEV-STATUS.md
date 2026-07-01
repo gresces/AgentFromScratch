@@ -38,6 +38,7 @@ Agent 核已完成最小闭环，可在终端通过 TUI 界面运行。插件系
 - **2026-06-29**：实现右侧栏 Files 文件浏览器（展开/折叠目录，可点击）。
 - **2026-06-29**：新增 `file` 工具插件（file_read / file_write / file_exists）。
 
+- **2026-07-01**：动态滚动增量计算：消息区键盘（↑/↓/PageUp/PageDown）和鼠标滚轮滚动增量不再使用固定值，改为根据终端高度和消息数量动态计算，上限为可见页面高度的 80%。修改 `app.cc` 的 `Scroll` 动作处理和 `input.cc` 的 `adjustScrollPosition`/`maxScrollDelta`。
 ## 进行中
 
 - 无。当前迭代已完成。

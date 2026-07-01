@@ -61,6 +61,7 @@ struct AFS_TuiConfigItem {
     std::string label;
     std::string detail;
     std::string value_type;
+    std::string fallback_value;
     std::vector<std::string> path;
     bool editable = false;
 };
@@ -80,7 +81,7 @@ struct AFS_TuiConfigView {
 
 using AFS_TuiSidebarButtons = std::array<AFS_TuiSidebarButton, 2>;
 
-ftxui::InputOption AFS_TuiInputOption();
+ftxui::InputOption AFS_TuiInputOption(int* cursor_position);
 ftxui::Element AFS_TuiRenderStatus(const AFS_TuiStatusView& view);
 ftxui::Element AFS_TuiRenderMessages(const std::vector<TuiMessage>& messages);
 ftxui::Element AFS_TuiRenderQuickIndex(std::vector<AFS_TuiQuickIndexEntry>& entries);

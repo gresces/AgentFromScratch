@@ -3,62 +3,103 @@
 #include <nlohmann/json.hpp>
 
 #include <filesystem>
-#include <optional>
+#include <functional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
-// ---- AFS_ModelConfig ---------------------------------------------------------
-// 单个模型配置条目：可用于 LLM 或 embedding 模型。
-struct AFS_ModelConfig {
+// ---- AFS_ConfigValueType -----------------------------------------------------
+enum class AFS_ConfigValueType {
+    String,
+    UnsignedInteger,
+    Number,
+    Boolean,
+};
+
+std::string AFS_ConfigValueTypeName(AFS_ConfigValueType type);
+
+// ---- AFS_ConfigFieldSpec -----------------------------------------------------
+struct AFS_ConfigFieldSpec {
     std::string name;
-    std::string base_url;
-    std::string api_key;
-    std::string model;
-    std::size_t context_limit = 0; // 0 = 无限制
+    AFS_ConfigValueType type = AFS_ConfigValueType::String;
+    bool required = false;
+    bool sensitive = false;
+    nlohmann::json default_value;
 };
 
-// ---- AFS_ModelsConfig --------------------------------------------------------
-// 模型分组配置：LLM 列表和 embedding 模型列表。
-struct AFS_ModelsConfig {
-    std::vector<AFS_ModelConfig> llms;
-    std::vector<AFS_ModelConfig> embeddings;
+// ---- AFS_ConfigSchema --------------------------------------------------------
+struct AFS_ConfigSchema {
+    std::string module;
+    std::vector<std::string> path;
+    bool is_array = false;
+    std::vector<AFS_ConfigFieldSpec> fields;
 };
-
-// ---- AFS_TuiLayoutConfig -----------------------------------------------------
-// TUI 布局偏好。比例值为 0..1，表示右侧区域占内容区宽度的比例。
-struct AFS_TuiLayoutConfig {
-    double sidebar_ratio = 0.35;
-};
-
-struct AFS_TuiConfig {
-    AFS_TuiLayoutConfig layout;
-};
-
-// ---- nlohmann_json 反序列化适配 ----------------------------------------------
-void from_json(const nlohmann::json& j, AFS_ModelConfig& cfg);
-void from_json(const nlohmann::json& j, AFS_ModelsConfig& models);
-void from_json(const nlohmann::json& j, AFS_TuiLayoutConfig& layout);
-void from_json(const nlohmann::json& j, AFS_TuiConfig& tui);
 
 // ---- AFS_Config --------------------------------------------------------------
-// Agent 全局配置，从 JSON 文件加载，可由命令行参数覆盖。
-// 不持有文件路径或原始 JSON，只保留解析后的结构化数据。
+// 动态配置值对象：只保存配置文件路径和原始 JSON，不包含任何业务模块 typed config。
 class AFS_Config {
   public:
-    // ---- lifecycle ----------------------------------------------------------
-    AFS_Config() = default;
+    bool loadFromFile(const std::filesystem::path& path, std::string& error);
+    bool save(std::string& error) const;
 
-    // 从 JSON 文件路径加载配置，失败时返回 std::nullopt。
-    static std::optional<AFS_Config> loadFromFile(const std::filesystem::path& path);
+    const std::filesystem::path& path() const { return path_; }
+    const nlohmann::json& root() const { return root_; }
+    const nlohmann::json* valueAt(const std::vector<std::string>& path) const;
 
-    // 更新配置文件中的 TUI 右侧栏比例，保留其它 JSON 字段。
-    static bool saveTuiSidebarRatio(const std::filesystem::path& path, double ratio);
-
-    // ---- accessors ----------------------------------------------------------
-    const AFS_ModelsConfig& models() const { return models_; }
-    const AFS_TuiConfig& tui() const { return tui_; }
+    bool updateValue(const std::vector<std::string>& path, const nlohmann::json& value,
+                     std::string& error);
 
   private:
-    AFS_ModelsConfig models_;
-    AFS_TuiConfig tui_;
+    void ensureObjectRoot();
+
+    std::filesystem::path path_;
+    nlohmann::json root_ = nlohmann::json::object();
+};
+
+using AFS_ConfigApplyFn = std::function<bool(const AFS_Config& config, std::string& error)>;
+
+// ---- AFS_ConfigUpdateResult --------------------------------------------------
+struct AFS_ConfigUpdateResult {
+    bool ok = false;
+    std::string error;
+    std::vector<std::string> affected_modules;
+};
+
+// ---- AFS_ConfigManager -------------------------------------------------------
+// 动态配置管理器：维护配置类、模块 schema 注册表和可选应用回调。
+// 不声明、不解析任何具体模块配置结构；models/tui/plugins 等模块自行声明类型并注册 schema。
+class AFS_ConfigManager {
+  public:
+    static AFS_ConfigManager& instance();
+
+    // ---- registration -------------------------------------------------------
+    void registerSchema(AFS_ConfigSchema schema, AFS_ConfigApplyFn apply = {});
+    const std::vector<AFS_ConfigSchema>& schemas() const { return schemas_; }
+
+    // ---- file state ---------------------------------------------------------
+    bool loadFromFile(const std::filesystem::path& path, std::string& error);
+    bool save(std::string& error) const;
+
+    // ---- config access ------------------------------------------------------
+    const AFS_Config& config() const { return config_; }
+    const std::filesystem::path& path() const { return config_.path(); }
+    const nlohmann::json& root() const { return config_.root(); }
+    const nlohmann::json* valueAt(const std::vector<std::string>& path) const {
+        return config_.valueAt(path);
+    }
+
+    // ---- update/apply -------------------------------------------------------
+    AFS_ConfigUpdateResult updateValue(const std::vector<std::string>& path,
+                                       const nlohmann::json& value);
+    bool applyModule(const std::string& module, std::string& error) const;
+    bool applyModules(const std::vector<std::string>& modules, std::string& error) const;
+
+  private:
+    AFS_ConfigManager() = default;
+
+    std::vector<std::string> affectedModulesForPath(const std::vector<std::string>& path) const;
+
+    AFS_Config config_;
+    std::vector<AFS_ConfigSchema> schemas_;
+    std::unordered_map<std::string, AFS_ConfigApplyFn> appliers_;
 };

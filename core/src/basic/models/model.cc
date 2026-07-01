@@ -58,6 +58,74 @@ bool postJsonStream(const std::string& url, const std::string& api_key, const nl
 }
 
 } // namespace
+// ---- AFS_ModelConfig ---------------------------------------------------------
+
+AFS_ConfigSchema AFS_ModelConfig::configSchema(const std::vector<std::string>& path,
+                                               const std::string& module) {
+    return {
+        .module = module,
+        .path = path,
+        .is_array = true,
+        .fields =
+            {
+                {
+                    {"name", AFS_ConfigValueType::String, true, false, ""},
+                    {"base_url", AFS_ConfigValueType::String, true, false, ""},
+                    {"api_key", AFS_ConfigValueType::String, true, true, ""},
+                    {"model", AFS_ConfigValueType::String, true, false, ""},
+                    {"context_limit", AFS_ConfigValueType::UnsignedInteger, false, false, 0},
+                },
+            },
+    };
+}
+
+void from_json(const nlohmann::json& j, AFS_ModelConfig& cfg) {
+    j.at("name").get_to(cfg.name);
+    j.at("base_url").get_to(cfg.base_url);
+    j.at("api_key").get_to(cfg.api_key);
+    j.at("model").get_to(cfg.model);
+    if (j.contains("context_limit") && j["context_limit"].is_number_unsigned()) {
+        cfg.context_limit = j["context_limit"].get<std::size_t>();
+    }
+}
+
+void from_json(const nlohmann::json& j, AFS_ModelsConfig& models) {
+    if (j.contains("llms")) {
+        j.at("llms").get_to(models.llms);
+    }
+    if (j.contains("embeddings")) {
+        j.at("embeddings").get_to(models.embeddings);
+    }
+}
+
+void AFS_RegisterModelConfigSchemas() {
+    auto& manager = AFS_ConfigManager::instance();
+    manager.registerSchema(AFS_ModelConfig::configSchema({"models", "llms"}, "models.llms"));
+    manager.registerSchema(
+        AFS_ModelConfig::configSchema({"models", "embeddings"}, "models.embeddings"));
+}
+
+std::optional<AFS_ModelsConfig> AFS_LoadModelsConfig(const AFS_Config& config) {
+    AFS_ModelsConfig models;
+    try {
+        const auto& root = config.root();
+        if (root.contains("models")) {
+            if (!root["models"].is_object()) return std::nullopt;
+            root.at("models").get_to(models);
+        }
+    } catch (const nlohmann::json::exception&) {
+        return std::nullopt;
+    }
+    return models;
+}
+
+std::optional<AFS_ModelsConfig> AFS_LoadModelsConfig(const AFS_ConfigManager& manager) {
+    return AFS_LoadModelsConfig(manager.config());
+}
+
+std::optional<AFS_ModelsConfig> AFS_LoadModelsConfig() {
+    return AFS_LoadModelsConfig(AFS_ConfigManager::instance());
+}
 
 // ---- AFS_Model ---------------------------------------------------------------
 

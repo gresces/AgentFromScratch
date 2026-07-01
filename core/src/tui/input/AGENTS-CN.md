@@ -15,6 +15,8 @@ TUI 输入事件处理子模块。负责把 FTXUI `Event` 转成可执行的 UI 
 std::optional<AFS_TuiKeyActionEvent> AFS_TuiResolveKeyAction(const ftxui::Event& event);
 bool AFS_TuiIsMultilineShortcut(const ftxui::Event& event);
 bool AFS_TuiCancelsExitConfirmation(const ftxui::Event& event);
+bool AFS_TuiHandleReadlineShortcut(const ftxui::Event& event, std::string& input,
+                                   int& cursor_position);
 bool AFS_TuiHandleScrollEvent(ftxui::Event event, int& scroll_position, bool& follow_latest);
 ```
 
@@ -35,8 +37,8 @@ bool AFS_TuiHandleScrollEvent(ftxui::Event event, int& scroll_position, bool& fo
   - `ESC [ 27 ; 6 ; 13 ~`：legacy Ctrl+Shift+Enter
 - 不要把 `Event::CtrlJ` 当换行快捷键；FTXUI 中 `Event::Return` 和 `Event::CtrlJ` 都是 LF，无法可靠区分 plain Enter 和 Ctrl+J。
 - `Esc` 双击退出的状态由 `app.cc` 保存；映射表只把 `Esc` 解析为 `BeginExit` 动作。
-- 鼠标滚轮、`↑` / `↓`、`PageUp` / `PageDown` 默认更新 0..1000 的相对 `scroll_position`；`@` 文件候选激活时，`app.cc` 优先把 `↑` / `↓` 用作候选高亮移动。
-
+- 鼠标滚轮、`↑` / `↓`、`PageUp` / `PageDown` 更新 0..1000 的相对 `scroll_position`。`input.cc::adjustScrollPosition` 只把增量裁剪到 0..1000 范围；实际的 80% 页面高度动态裁剪在 `app.cc` 的 `AFS_TuiKeyAction::Scroll` 处理器和鼠标滚轮处理器中完成。`@` 文件候选激活时，`app.cc` 优先把 `↑` / `↓` 用作候选高亮移动。
+- Readline 风格编辑快捷键由 `AFS_TuiHandleReadlineShortcut()` 统一处理，调用方必须传入当前输入 buffer 和对应 cursor position；当前支持 `Ctrl+A/E/B/F/W/U/K/D`。
 ## Shell 模式边界
 
 Shell 模式本身不在本模块实现；本模块只保证 `Tab` 不被误判为滚动或换行。执行逻辑在 `app.cc::submitShell()` 中。

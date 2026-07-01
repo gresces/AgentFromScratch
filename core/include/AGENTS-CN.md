@@ -39,7 +39,7 @@ AFS_PLUGIN_EXPORT void destroyPlugin(AFS::Plugin* p) { delete p; }
 | `afs/common.hh` | UUID 生成工具（header-only） |
 | `afs/message.hh` | 消息类型声明 |
 | `afs/metadata.hh` | 公共 metadata 辅助函数（`appendMeta`，header-only） |
-| `afs/plugin.hh` | 插件基类、导出宏、ABI 版本、`ToolCap` |
+| `afs/plugin.hh` | 插件基类、导出宏、ABI 版本、`ToolCap`、可选配置 schema 导出签名 |
 | `afs/tool.hh` | `AFS::ToolSpec`（插件开发者唯一需要的工具类型） |
 
 所有公共 API 类型均为 header-only，`print()` 方法内联在对应头文件中，无需单独的 `.cc` 实现文件。
@@ -197,12 +197,19 @@ virtual std::vector<ToolCap> toolCapabilities() const;  // 默认空列表
 ### C ABI 导出签名
 
 ```cpp
-using AbiVersionFn = std::uint32_t (*)();
-using CreateFn      = Plugin* (*)();
-using DestroyFn     = void (*)(Plugin*);
+using AbiVersionFn    = std::uint32_t (*)();
+using CreateFn        = Plugin* (*)();
+using DestroyFn       = void (*)(Plugin*);
+using ConfigSchemasFn = const char* (*)();  // 可选：返回配置 schema JSON 数组
 ```
 
 插件必须导出三个符号。
+
+插件可以额外导出 `pluginConfigSchemas()`。宿主只通过 `dlsym` 探测该符号；未导出时按旧插件处理。返回值应是静态生命周期的 UTF-8 JSON 字符串，形状为数组：
+
+```json
+[{"module":"plugin.tool.example","path":["plugins","tool","example"],"is_array":false,"fields":[{"name":"enabled","type":"boolean","required":false}]}]
+```
 
 ### 完整示例
 

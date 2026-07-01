@@ -30,7 +30,7 @@ core/
     │
     ├── basic/                 # 基础设施模块
     │   ├── AGENTS-CN.md
-    │   ├── config/            # JSON 配置加载（AFS_Config、AFS_ModelConfig）
+    │   ├── config/            # 动态配置管理器与 schema 注册表
     │   ├── log/               # 全局日志与发布-订阅总线（AFS_Logger）
     │   └── models/            # LLM 模型抽象（OpenAI 兼容协议、DeepSeek）
     │

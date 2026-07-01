@@ -124,7 +124,7 @@ LLM 返回的 tool_calls：
 
 ## 约束
 
-- 最大迭代 50 次，防止无限循环。
+- 最大迭代次数由 `AFS_Loop::kMaxIterations`（`loop.hh:18`）控制，默认 50 次，防止无限循环。修改此值即可调整 Agent 最大工具调用轮数。
 - LLM 请求失败时返回空字符串。
 - `AFS_Loop::run()` 仅接收四个精确资源，不依赖 `AFS_Agent` 类型。
 - 运行时事件仅写入 `AFS_Logger` 缓冲区，不感知订阅者或消费方式。

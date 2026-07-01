@@ -206,6 +206,10 @@ void AFS_Agent::setModel(std::unique_ptr<AFS_Model> model) {
     context_.recomputeTokens(*model_);
 }
 
+void AFS_Agent::setLoopConfig(AFS_AgentLoopConfig config) {
+    loop_.setConfig(config);
+}
+
 std::string AFS_Agent::run() {
     if (!model_) return "";
     return loop_.run(context_, tool_registry_, *model_, uuid_);

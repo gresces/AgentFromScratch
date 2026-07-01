@@ -93,13 +93,24 @@ TuiMessage parseToolMessage(const std::string& text) {
 std::unique_ptr<AFS_TuiAgentBridge> AFS_TuiAgentBridge::create(const std::string& config_path) {
     AFS_Logger::init();
 
-    auto config = AFS_Config::loadFromFile(config_path);
-    if (!config || config->models().llms.empty()) {
+    auto& config_manager = AFS_ConfigManager::instance();
+    AFS_RegisterModelConfigSchemas();
+    AFS_RegisterAgentConfigSchemas();
+    AFS_RegisterPluginConfigSchemas();
+    std::string config_error;
+    if (!config_manager.loadFromFile(config_path, config_error)) {
+        AFS_LOG_ERROR(kRoleMain, "", "failed to load config: " + config_error);
+        return nullptr;
+    }
+    auto models = AFS_LoadModelsConfig(config_manager);
+    if (!models || models->llms.empty()) {
         AFS_LOG_ERROR(kRoleMain, "", "failed to load config or no LLM model is configured");
         return nullptr;
     }
-
-    AFS_PluginManager::instance()->loadFromDirectory(AFS_DefaultPluginDirectory());
+    auto plugin_config = AFS_LoadPluginRuntimeConfig(config_manager);
+    AFS_PluginManager::instance()->loadFromDirectory(
+        plugin_config ? std::filesystem::path(plugin_config->directory)
+                      : AFS_DefaultPluginDirectory());
 
     auto agent = AFS_Agent::createMain();
     if (!agent) {
@@ -107,27 +118,42 @@ std::unique_ptr<AFS_TuiAgentBridge> AFS_TuiAgentBridge::create(const std::string
         return nullptr;
     }
 
-    agent->setModel(createModel(config->models().llms[0]));
+    agent->setModel(createModel(models->llms[0]));
+    if (auto loop_config = AFS_LoadAgentLoopConfig(config_manager)) {
+        agent->setLoopConfig(*loop_config);
+    }
 
     auto bridge = std::unique_ptr<AFS_TuiAgentBridge>(new AFS_TuiAgentBridge());
     bridge->agent_ = std::move(agent);
-    bridge->model_name_ = config->models().llms[0].model;
+    bridge->model_name_ = models->llms[0].model;
     bridge->work_dir_ = shortWorkingDirectory();
-    bridge->context_limit_ = config->models().llms[0].context_limit;
+    bridge->context_limit_ = models->llms[0].context_limit;
     return bridge;
 }
 bool AFS_TuiAgentBridge::reloadConfig(const std::string& config_path) {
     if (running_.load()) return false;
 
-    auto config = AFS_Config::loadFromFile(config_path);
-    if (!config || config->models().llms.empty()) {
+    auto& config_manager = AFS_ConfigManager::instance();
+    AFS_RegisterModelConfigSchemas();
+    AFS_RegisterAgentConfigSchemas();
+    AFS_RegisterPluginConfigSchemas();
+    std::string config_error;
+    if (!config_manager.loadFromFile(config_path, config_error)) {
+        AFS_LOG_ERROR(kRoleMain, "", "failed to reload config: " + config_error);
+        return false;
+    }
+    auto models = AFS_LoadModelsConfig(config_manager);
+    if (!models || models->llms.empty()) {
         AFS_LOG_ERROR(kRoleMain, "", "failed to reload config or no LLM model is configured");
         return false;
     }
 
-    agent_->setModel(createModel(config->models().llms[0]));
-    model_name_ = config->models().llms[0].model;
-    context_limit_ = config->models().llms[0].context_limit;
+    agent_->setModel(createModel(models->llms[0]));
+    if (auto loop_config = AFS_LoadAgentLoopConfig(config_manager)) {
+        agent_->setLoopConfig(*loop_config);
+    }
+    model_name_ = models->llms[0].model;
+    context_limit_ = models->llms[0].context_limit;
     return true;
 }
 

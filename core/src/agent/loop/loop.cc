@@ -4,6 +4,50 @@
 #include <boost/sml.hpp>
 namespace sml = boost::sml;
 
+// ---- AFS_AgentLoopConfig ------------------------------------------------------
+
+AFS_ConfigSchema AFS_AgentLoopConfig::configSchema() {
+    return {
+        .module = "agent.loop",
+        .path = {"agent", "loop"},
+        .is_array = false,
+        .fields =
+            {
+                {"max_iterations", AFS_ConfigValueType::UnsignedInteger, true, false, 50},
+            },
+    };
+}
+
+void from_json(const nlohmann::json& j, AFS_AgentLoopConfig& config) {
+    if (j.contains("max_iterations") && j["max_iterations"].is_number_unsigned()) {
+        config.max_iterations = j["max_iterations"].get<unsigned>();
+    }
+}
+
+void AFS_RegisterAgentConfigSchemas() {
+    AFS_ConfigManager::instance().registerSchema(AFS_AgentLoopConfig::configSchema());
+}
+
+std::optional<AFS_AgentLoopConfig> AFS_LoadAgentLoopConfig(const AFS_Config& config) {
+    try {
+        const auto& root = config.root();
+        if (!root.contains("agent") || !root["agent"].is_object()) return AFS_AgentLoopConfig{};
+        const auto& agent = root["agent"];
+        if (!agent.contains("loop") || !agent["loop"].is_object()) return AFS_AgentLoopConfig{};
+        return agent.at("loop").get<AFS_AgentLoopConfig>();
+    } catch (const nlohmann::json::exception&) {
+        return std::nullopt;
+    }
+}
+
+std::optional<AFS_AgentLoopConfig> AFS_LoadAgentLoopConfig(const AFS_ConfigManager& manager) {
+    return AFS_LoadAgentLoopConfig(manager.config());
+}
+
+std::optional<AFS_AgentLoopConfig> AFS_LoadAgentLoopConfig() {
+    return AFS_LoadAgentLoopConfig(AFS_ConfigManager::instance());
+}
+
 // ---- 状态机 -----------------------------------------------------------------
 
 namespace {
@@ -244,7 +288,7 @@ std::string AFS_Loop::run(AFS_Context& context, AFS_ToolRegistry& tools, const A
 
     unsigned iter = 0;
 
-    while (!fsm.is(sml::state<Finished>) && iter < kMaxIterations) {
+    while (!fsm.is(sml::state<Finished>) && iter < config_.max_iterations) {
 
         if (fsm.is(sml::state<WaitingLLM>)) {
             auto req = buildRequest(context, model.modelName(), tools);
@@ -311,7 +355,7 @@ std::string AFS_Loop::run(AFS_Context& context, AFS_ToolRegistry& tools, const A
         }
     }
 
-    if (iter >= kMaxIterations) {
+    if (iter >= config_.max_iterations) {
         logger.publishError("达到最大迭代次数");
         AFS_LOG_ERROR(agent_uuid, kRoleLoop, "达到最大迭代次数");
     }

@@ -101,21 +101,35 @@ static void consoleRenderEvents(AFS_Logger& logger) {
 static int runConsole(const std::string& config_path, const std::string& prompt) {
     AFS_Logger::init();
 
-    auto config = AFS_Config::loadFromFile(config_path);
-    if (!config || config->models().llms.empty()) {
+    auto& config_manager = AFS_ConfigManager::instance();
+    AFS_RegisterModelConfigSchemas();
+    AFS_RegisterAgentConfigSchemas();
+    AFS_RegisterPluginConfigSchemas();
+    std::string config_error;
+    if (!config_manager.loadFromFile(config_path, config_error)) {
+        AFS_LOG_ERROR(kRoleMain, "", "无法加载配置: " + config_error);
+        return 1;
+    }
+    auto models = AFS_LoadModelsConfig(config_manager);
+    if (!models || models->llms.empty()) {
         AFS_LOG_ERROR(kRoleMain, "", "无法加载配置或无 LLM 模型");
         return 1;
     }
 
-    AFS_PluginManager::instance()->loadFromDirectory(AFS_DefaultPluginDirectory());
-
+    auto plugin_config = AFS_LoadPluginRuntimeConfig(config_manager);
+    AFS_PluginManager::instance()->loadFromDirectory(
+        plugin_config ? std::filesystem::path(plugin_config->directory)
+                      : AFS_DefaultPluginDirectory());
     auto agent = AFS_Agent::createMain();
     if (!agent) {
         AFS_LOG_ERROR(kRoleMain, "", "创建 Agent 失败");
         return 1;
     }
 
-    agent->setModel(createModel(config->models().llms[0]));
+    agent->setModel(createModel(models->llms[0]));
+    if (auto loop_config = AFS_LoadAgentLoopConfig(config_manager)) {
+        agent->setLoopConfig(*loop_config);
+    }
     agent->context().addMessage(AFS::UserMessage(prompt));
 
     AFS_Logger::instance().output(agent->context().messages().back().print());

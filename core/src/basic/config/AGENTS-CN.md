@@ -1,65 +1,98 @@
 # core > src > basic > config > AGENTS-CN.md
 
-Agent 核心所需的配置模块，通过 JSON 配置文件确定运行参数。
+动态配置基础设施。该目录维护通用 `AFS_Config` 配置类，负责 JSON 文件解析、配置路径、schema 注册表、模块应用回调和通用写回；不得声明或解析任何业务模块的具体配置结构。
 
 ## 文件
 
-- `config.hh` — `AFS_Config` 类声明及 `AFS_ModelConfig`、`AFS_ModelsConfig`、`AFS_TuiConfig` 结构体定义。
-- `config.cc` — `AFS_Config::loadFromFile`、`AFS_Config::saveTuiSidebarRatio` 实现及 `nlohmann::json` 反序列化适配。
+- `config.hh` — `AFS_Config`、`AFS_ConfigManager`、`AFS_ConfigSchema`、`AFS_ConfigFieldSpec`、`AFS_ConfigValueType` 等通用配置基础类型。
+- `config.cc` — JSON 加载/保存、路径读取/写入、受影响模块计算、schema 注册去重、可选模块应用回调。
 - `paths.hh` / `paths.cc` — 用户配置目录、默认配置文件、默认插件目录的路径解析。
 
-## 结构体定义
+## 边界
 
-### `AFS_ModelConfig`
+- `config/` **不知道** `models`、`tui`、`plugins` 的具体配置结构。
+- 业务模块可以包含 `basic/config/config.hh`，注册自己的 `AFS_ConfigSchema`，并从 `AFS_Config` 解析自己的 typed config。
+- `config/` 只有在模块调用 `registerSchema()` 后，才会在 schema 注册表中“看见”该模块；注册时可附带 `AFS_ConfigApplyFn`，用于配置写回后直接应用该模块。
+- `AFS_ConfigManager::updateValue()` 修改 `AFS_Config` 中的 JSON 并计算受影响模块，不负责业务字段语义校验。字段语义由注册该 schema 的模块解析或应用时校验。
 
-单个模型配置条目，LLM 和 embedding 模型共用同一结构。
+## 通用 schema 类型
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `name` | `std::string` | 模型标识名（用于日志/调试，非 API 参数） |
-| `base_url` | `std::string` | API 基地址（不含尾部路径，如 `https://api.deepseek.com`） |
-| `api_key` | `std::string` | API 密钥（Bearer Token） |
-| `model` | `std::string` | 模型名称（传递给 API 的 `model` 字段） |
-| `context_limit` | `std::size_t` | 可选。模型上下文容量上限（token 数），0 表示无限制。用于 TUI 状态栏容量警告 |
+### `AFS_ConfigValueType`
 
-### `AFS_ModelsConfig`
+用于 TUI 等展示层选择输入校验方式：
 
-模型分组，包含 LLM 列表和 embedding 模型列表。
+- `String`
+- `UnsignedInteger`
+- `Number`
+- `Boolean`
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `llms` | `std::vector<AFS_ModelConfig>` | LLM 模型列表，支持多个 |
-| `embeddings` | `std::vector<AFS_ModelConfig>` | embedding 模型列表，支持多个 |
+`AFS_ConfigValueTypeName(type)` 返回面向 UI 的字符串：`string`、`unsigned integer`、`number`、`boolean`。
 
+### `AFS_ConfigFieldSpec`
 
-### `AFS_TuiLayoutConfig`
+| 字段 | 说明 |
+|------|------|
+| `name` | 字段名，相对于 schema path 的末段 |
+| `type` | 输入类型 |
+| `required` | 是否必填，由模块解析时决定如何执行 |
+| `sensitive` | 是否敏感；TUI 可据此隐藏当前值 |
+| `default_value` | UI 或模块可使用的默认值 |
 
-TUI 布局偏好。
+### `AFS_ConfigSchema`
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `sidebar_ratio` | `double` | 宽屏右侧区域占内容区宽度的比例，默认 `0.35`，运行时钳制到 `0.15..0.75` |
+| 字段 | 说明 |
+|------|------|
+| `module` | 模块名，如 `models.llms`、`tui.layout`、`plugin.tool.example` |
+| `path` | JSON 路径，如 `models.llms` 表示 `root["models"]["llms"]` |
+| `is_array` | `true` 表示 path 指向数组，字段应用到数组每个元素 |
+| `fields` | 该模块暴露给配置浏览/编辑界面的字段列表 |
 
-### `AFS_TuiConfig`
+## `AFS_Config`
 
-TUI 配置分组。
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `layout` | `AFS_TuiLayoutConfig` | 布局偏好 |
-
-### `AFS_Config`
-
-Agent 全局配置。不持有文件路径或原始 JSON，只保留解析后的结构化数据。当前版本包含 `models` 和 `tui` 段。
+配置值对象，保存已解析的 JSON 根和配置文件路径。
 
 | 方法 | 说明 |
 |------|------|
-| `static loadFromFile(path)` | 从 JSON 文件路径加载，失败返回 `std::nullopt` |
-| `static saveTuiSidebarRatio(path, ratio)` | 更新 JSON 文件中的 `tui.layout.sidebar_ratio`，保留其它字段，失败返回 `false` |
-| `models()` | 返回 `AFS_ModelsConfig` 的只读引用 |
-| `tui()` | 返回 `AFS_TuiConfig` 的只读引用 |
+| `loadFromFile(path, error)` | 读取并解析 JSON 文件，要求根节点为 object |
+| `save(error)` | 写回当前配置文件 |
+| `path()` | 当前配置文件路径 |
+| `root()` | 当前原始 JSON 根，只读 |
+| `valueAt(path)` | 按路径读取 JSON 值，失败返回 `nullptr` |
+| `updateValue(path, value, error)` | 按路径写入 JSON 值 |
 
-## JSON 配置文件格式
+## `AFS_ConfigManager`
+
+进程级单例，负责持有当前 `AFS_Config`、模块 schema 和可选应用回调。
+
+| 方法 | 说明 |
+|------|------|
+| `instance()` | 返回全局配置管理器 |
+| `registerSchema(schema, apply)` | 注册模块 schema 和可选应用回调；同 `module + path` 重复注册时覆盖旧值 |
+| `schemas()` | 返回当前已注册 schema 列表 |
+| `loadFromFile(path, error)` | 启动时读取 JSON 到内部 `AFS_Config` |
+| `save(error)` | 将内部 `AFS_Config` 写回已加载路径 |
+| `config()` | 返回当前 `AFS_Config` |
+| `path()` / `root()` / `valueAt(path)` | 只读代理到当前 `AFS_Config` |
+| `updateValue(path, value)` | 按路径写入 JSON 值，并返回受影响模块 |
+| `applyModule(module, error)` | 若模块注册过应用回调，则用当前 `AFS_Config` 调用该回调 |
+| `applyModules(modules, error)` | 依次应用多个受影响模块 |
+
+## 模块接入方式
+
+以 models 模块为例：
+
+1. 在 `basic/models/model.hh` 声明 `AFS_ModelConfig`、`AFS_ModelsConfig`。
+2. 在 `basic/models/model.cc` 实现 `from_json` 和 `AFS_ModelConfig::configSchema()`。
+3. 模块启动时调用 `AFS_RegisterModelConfigSchemas()`，向 `AFS_ConfigManager` 注册 `models.llms` 和 `models.embeddings`。
+4. 加载配置文件后，调用 `AFS_LoadModelsConfig(AFS_ConfigManager::instance().config())` 从 `AFS_Config` 解析模型配置。
+
+TUI 模块同理：`AFS_TuiLayoutConfig` / `AFS_TuiConfig` 在 `tui/app.hh` 中声明，`AFS_TuiApp::registerConfigSchema()` 注册 `tui.layout`。
+
+插件模块通过可选 ABI `pluginConfigSchemas()` 返回 JSON schema 数组，`AFS_PluginManager` 加载插件时注册这些 schema。
+
+## JSON 文件约定
+
+当前默认配置文件仍使用以下形状，但 `config/` 不硬编码这些字段：
 
 ```json
 {
@@ -68,21 +101,12 @@ Agent 全局配置。不持有文件路径或原始 JSON，只保留解析后的
       {
         "name": "DeepSeek",
         "base_url": "https://api.deepseek.com",
-        "api_key": "sk-xxxx",
-        "model": "deepseek-v4-pro",
+        "api_key": "sk-...",
+        "model": "deepseek-chat",
         "context_limit": 1000000
       }
     ],
-      }
-    ],
-    "embeddings": [
-      {
-        "name": "Bailian",
-        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "api_key": "sk-xxxx",
-        "model": "text-embedding-v3"
-      }
-    ]
+    "embeddings": []
   },
   "tui": {
     "layout": {
@@ -92,96 +116,19 @@ Agent 全局配置。不持有文件路径或原始 JSON，只保留解析后的
 }
 ```
 
-### 字段规则
-
-- 顶层 `"models"` 键为可选；缺失时 `AFS_ModelsConfig` 使用空默认值（`llms` 和 `embeddings` 均为空 vector）。
-- `"llms"` 和 `"embeddings"` 均为可选；缺失对应列表为空。
-- 单条模型配置（`AFS_ModelConfig`）的四个字段（`name`, `base_url`, `api_key`, `model`）均为必须。任一缺失时 `nlohmann::json::at()` 抛出 `out_of_range` 异常，`loadFromFile` 捕获后返回 `std::nullopt`。
-- `base_url` **不应**包含尾部 `/` 或 API 路径段（如 `/chat/completions`）。模型实现会自动拼接端点路径。
-- 支持配置多个 LLM 和多个 embedding 模型，调用方按 `name` 字段选择。
-- 顶层 `"tui"` 键为可选；缺失时 `AFS_TuiConfig` 使用默认值。
-- `"tui.layout.sidebar_ratio"` 为可选；缺失时默认 `0.35`。TUI 读取后钳制到 `0.15..0.75`，宽屏拖动右侧分割线时写回该字段。
-
-## 使用示例
-
-### 默认运行时路径
-
-程序默认使用用户配置目录下的 `afs/` 子目录：
-
-| 项 | 路径 |
-|----|------|
-| 配置目录 | `${XDG_CONFIG_HOME}/afs`；若未设置 `XDG_CONFIG_HOME`，则为 `${HOME}/.config/afs` |
-| 默认配置文件 | `${XDG_CONFIG_HOME:-$HOME/.config}/afs/config.json` |
-| 默认插件目录 | `${XDG_CONFIG_HOME:-$HOME/.config}/afs/plugins/` |
-
-对应 helper：
-
-```cpp
-#include "basic/config/paths.hh"
-
-auto config_path = AFS_DefaultConfigPath();
-auto plugin_dir = AFS_DefaultPluginDirectory();
-```
-
-`Agent` 无参数启动时读取默认配置文件并进入 TUI；显式传入 `<config.json>` 时使用该文件，但插件仍默认从用户配置目录的 `afs/plugins/` 加载。
-
-### 加载配置
-
-```cpp
-#include "basic/config/config.hh"
-
-auto cfg = AFS_Config::loadFromFile("config.json");
-if (!cfg) {
-    std::cerr << "无法加载配置文件" << std::endl;
-    return;
-}
-
-// 访问 LLM 列表
-for (const auto& llm : cfg->models().llms) {
-    std::cout << "LLM: " << llm.name << " (" << llm.model << ")" << std::endl;
-}
-
-// 访问 embedding 模型列表
-for (const auto& emb : cfg->models().embeddings) {
-    std::cout << "Embedding: " << emb.name << std::endl;
-}
-```
-
-### 程序化构造配置（不经过文件）
-
-```cpp
-AFS_ModelConfig llm;
-llm.name = "OpenAI";
-llm.base_url = "https://api.openai.com/v1";
-llm.api_key = "sk-...";
-llm.model = "gpt-4o";
-
-AFS_Config cfg;
-// 注意：AFS_Config 目前不直接提供修改 models_ 的 setter，
-// 但 AFS_ModelsConfig 和 AFS_ModelConfig 均为普通 struct，可直接赋值。
-```
-
 ## 设计决策
 
-- **值语义**：所有配置结构体均为普通值类型（无虚函数、无继承），支持复制和移动。
-- **失败即 nullopt**：`loadFromFile` 统一返回 `std::optional`，不抛异常。失败原因包括：文件不存在、JSON 语法错误、必填字段缺失——均返回 `std::nullopt`。调用方自行决定是否打印错误及其粒度。
-- **只读访问**：`AFS_Config` 通过 `const&` 返回 `models()`，外部不可修改配置内容。当前版本没有提供修改接口。
-- **显式 `from_json`**：反序列化使用 nlohmann 的 `from_json` ADL 定制点，`loadFromFile` 内部不直接拼接字段名，新增字段时只需修改 `from_json` 实现。
+- **动态边界**：配置核心只维护 JSON 与 schema 注册表，模块配置类型留在模块目录内。
+- **注册后可见**：TUI 配置页只枚举已注册 schema；模块未注册时不会出现在配置浏览器中。
+- **按模块重载**：写入后通过 `affected_modules` 判断是否需要重载模型、TUI 布局或插件。
+- **无业务默认值注入**：`config/` 不替模块补业务默认值；模块 typed loader 负责默认值和校验。
 
 ## 依赖
 
-- `nlohmann_json` — JSON 解析（header-only）。
-
-## 约定
-
-- `AFS_Config` 不持有文件路径，只保存解析后的结构化数据。
-- 配置字段目前均通过 JSON 文件确定，无命令行参数入口。
-- 顶层键（如 `models`）缺失时使用空默认值，不报错。
-- 单条模型配置的四个字段均为必须；缺失时 `nlohmann::json::at()` 抛出异常，`loadFromFile` 返回 `std::nullopt`。
-- 扩展新的配置段（如 `"logging"`、`"tools"`）时：在 `AFS_Config` 中新增成员字段 + 对应的 struct，在 `loadFromFile` 中增加 `root.contains("xxx")` 分支，并编写对应的 `from_json`。
+- `nlohmann_json` — JSON 解析与序列化。
 
 ## 注意事项
 
-- `base_url` 末尾不要加 `/`。模型实现会拼接 `"/chat/completions"` 或 `"/embeddings"`。如果 base_url 已经是 `"https://api.openai.com/v1"`（不含尾部 `/`），拼接后为 `"https://api.openai.com/v1/chat/completions"`——正确。如果误写成 `"https://api.openai.com/v1/"`，拼接后出现双斜杠 `//chat/completions`，多数服务端可以容忍但不推荐。
-- API 密钥以明文存储于 JSON 文件中，当前版本无加密或环境变量导入机制。生产环境部署时需注意文件权限。
-- `AFS_Config` 目前是值类型且不可变，`loadFromFile` 返回的是栈上的值对象（`std::optional<AFS_Config>`），调用方持有所有权。
+- 不要在 `config/` 中新增 `AFS_ModelsConfig`、`AFS_TuiConfig` 等模块结构。
+- 新模块需要配置时，应在该模块头/源文件中声明 typed config，并提供注册函数。
+- 修改配置保存行为时，应保持 `updateValue()` 对未知 path 的通用写入能力。

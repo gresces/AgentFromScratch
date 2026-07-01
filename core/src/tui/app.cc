@@ -123,29 +123,17 @@ const nlohmann::json* configValueAt(const nlohmann::json& root,
     return current;
 }
 
-nlohmann::json& ensureConfigValueAt(nlohmann::json& root, const std::vector<std::string>& path) {
-    nlohmann::json* current = &root;
-    for (const auto& segment : path) {
-        if (current->is_array()) {
-            std::size_t index = static_cast<std::size_t>(std::stoull(segment));
-            current = &(*current)[index];
-        } else {
-            current = &(*current)[segment];
-        }
-    }
-    return *current;
-}
-
 std::string configValueForInput(const nlohmann::json& root, const std::vector<std::string>& path,
-                                std::string_view value_type) {
+                                std::string_view value_type, const std::string& fallback_value) {
     const nlohmann::json* value = configValueAt(root, path);
-    if (!value) return value_type == "number" ? "0.35" : "";
+    if (!value) return fallback_value;
     if (value->is_string()) return value->get<std::string>();
     return jsonScalarLabel(*value);
 }
 
 std::string configDetailText(const nlohmann::json& root, const std::vector<std::string>& path,
-                             std::string_view value_type, bool editable) {
+                             std::string_view value_type, bool editable,
+                             const nlohmann::json& default_value) {
     const nlohmann::json* value = configValueAt(root, path);
     std::string current = value ? jsonScalarLabel(*value) : "<missing>";
     if (isSensitiveConfigPath(path) && value && value->is_string()) current = "***";
@@ -153,17 +141,20 @@ std::string configDetailText(const nlohmann::json& root, const std::vector<std::
     std::string detail = "Path: " + configPathLabel(path) + "\n";
     detail += "Type: " + std::string(value_type) + "\n";
     detail += "Current: " + current + "\n";
+    if (!default_value.is_null()) detail += "Default: " + jsonScalarLabel(default_value) + "\n";
     detail += editable ? "Edit the value below, then press Ctrl+S to save and reload."
                        : "This row is read-only.";
     return detail;
 }
 
 AFS_TuiConfigItem makeConfigItem(const nlohmann::json& root, std::vector<std::string> path,
-                                 std::string label, std::string value_type) {
+                                 std::string label, std::string value_type,
+                                 const nlohmann::json& default_value) {
     return {
         .label = std::move(label),
-        .detail = configDetailText(root, path, value_type, true),
+        .detail = configDetailText(root, path, value_type, true, default_value),
         .value_type = std::move(value_type),
+        .fallback_value = default_value.is_null() ? "" : jsonScalarLabel(default_value),
         .path = std::move(path),
         .editable = true,
     };
@@ -187,58 +178,50 @@ std::string modelEntryName(const nlohmann::json& item, int index) {
     return "#" + std::to_string(index);
 }
 
-void appendModelConfigItems(const nlohmann::json& root, std::string_view group_key,
-                            std::string category_label,
-                            std::vector<AFS_TuiConfigCategory>& categories) {
-    AFS_TuiConfigCategory category;
-    category.label = std::move(category_label);
-
-    const nlohmann::json* models = configValueAt(root, {"models"});
-    const nlohmann::json* group =
-        models && models->is_object() ? configValueAt(*models, {std::string(group_key)}) : nullptr;
-    if (!group || !group->is_array() || group->empty()) {
-        category.items.push_back(
-            makeReadonlyConfigItem("No entries", "No configured model entries in this list."));
-        categories.push_back(std::move(category));
-        return;
-    }
-
-    for (std::size_t index = 0; index < group->size(); ++index) {
-        const nlohmann::json& item = (*group)[index];
-        std::string prefix = "[" + std::to_string(index) + "] " +
-                             modelEntryName(item, static_cast<int>(index)) + " / ";
-        std::string index_segment = std::to_string(index);
-        category.items.push_back(
-            makeConfigItem(root, {"models", std::string(group_key), index_segment, "name"},
-                           prefix + "name", "string"));
-        category.items.push_back(
-            makeConfigItem(root, {"models", std::string(group_key), index_segment, "base_url"},
-                           prefix + "base_url", "string"));
-        category.items.push_back(
-            makeConfigItem(root, {"models", std::string(group_key), index_segment, "api_key"},
-                           prefix + "api_key", "string"));
-        category.items.push_back(
-            makeConfigItem(root, {"models", std::string(group_key), index_segment, "model"},
-                           prefix + "model", "string"));
-        category.items.push_back(
-            makeConfigItem(root, {"models", std::string(group_key), index_segment, "context_limit"},
-                           prefix + "context_limit", "unsigned integer"));
-    }
-    categories.push_back(std::move(category));
-}
-
 std::vector<AFS_TuiConfigCategory> buildConfigCategories(const nlohmann::json& root) {
     std::vector<AFS_TuiConfigCategory> categories;
     if (!root.is_object()) return categories;
 
-    appendModelConfigItems(root, "llms", "models.llms", categories);
-    appendModelConfigItems(root, "embeddings", "models.embeddings", categories);
+    for (const auto& schema : AFS_ConfigManager::instance().schemas()) {
+        AFS_TuiConfigCategory category;
+        category.label = schema.module;
 
-    AFS_TuiConfigCategory tui_layout;
-    tui_layout.label = "tui.layout";
-    tui_layout.items.push_back(
-        makeConfigItem(root, {"tui", "layout", "sidebar_ratio"}, "sidebar_ratio", "number"));
-    categories.push_back(std::move(tui_layout));
+        const nlohmann::json* node = configValueAt(root, schema.path);
+        if (schema.is_array) {
+            if (!node || !node->is_array() || node->empty()) {
+                category.items.push_back(makeReadonlyConfigItem(
+                    "No entries", "No configured entries for " + schema.module + "."));
+                categories.push_back(std::move(category));
+                continue;
+            }
+
+            for (std::size_t index = 0; index < node->size(); ++index) {
+                const nlohmann::json& item = (*node)[index];
+                std::string index_segment = std::to_string(index);
+                std::string prefix = "[" + index_segment + "] " +
+                                     modelEntryName(item, static_cast<int>(index)) + " / ";
+                for (const auto& field : schema.fields) {
+                    auto path = schema.path;
+                    path.push_back(index_segment);
+                    path.push_back(field.name);
+                    category.items.push_back(
+                        makeConfigItem(root, std::move(path), prefix + field.name,
+                                       AFS_ConfigValueTypeName(field.type), field.default_value));
+                }
+            }
+            categories.push_back(std::move(category));
+            continue;
+        }
+
+        for (const auto& field : schema.fields) {
+            auto path = schema.path;
+            path.push_back(field.name);
+            category.items.push_back(makeConfigItem(root, std::move(path), field.name,
+                                                    AFS_ConfigValueTypeName(field.type),
+                                                    field.default_value));
+        }
+        categories.push_back(std::move(category));
+    }
     return categories;
 }
 
@@ -254,17 +237,6 @@ bool loadConfigJson(const std::filesystem::path& path, nlohmann::json& root, std
         error = std::string("配置 JSON 解析失败: ") + ex.what();
         return false;
     }
-    return true;
-}
-
-bool saveConfigJson(const std::filesystem::path& path, const nlohmann::json& root,
-                    std::string& error) {
-    std::ofstream output(path);
-    if (!output.is_open()) {
-        error = "无法写入配置文件: " + path.string();
-        return false;
-    }
-    output << root.dump(2) << '\n';
     return true;
 }
 
@@ -395,7 +367,7 @@ AFS_TuiFileCandidates buildFileCandidates(const std::string& input, int selected
 }
 
 bool handleFileCandidateKey(Event event, std::string& input, std::string& query,
-                            int& selected_index) {
+                            int& selected_index, int& cursor_position) {
     if (!hasFileCandidateTrigger(input)) return false;
 
     syncFileCandidateQuery(input, query, selected_index);
@@ -417,6 +389,7 @@ bool handleFileCandidateKey(Event event, std::string& input, std::string& query,
     }
     if (count > 0) {
         input = applyFileCandidate(input, candidates.labels[selected_index]);
+        cursor_position = static_cast<int>(input.size());
         syncFileCandidateQuery(input, query, selected_index);
     }
     return true;
@@ -639,7 +612,7 @@ bool handleSidebarResize(Event event, int total_width, const Box& splitter_box,
     if (mouse.button == Mouse::Left && mouse.motion == Mouse::Released) {
         resizing_sidebar = false;
         updateSidebarRatioFromMouse(mouse.x, total_width, sidebar_ratio);
-        AFS_Config::saveTuiSidebarRatio(config_path, sidebar_ratio);
+        AFS_TuiApp::saveSidebarRatio(config_path, sidebar_ratio);
         return true;
     }
 
@@ -693,6 +666,18 @@ bool parseConfigEditValue(const AFS_TuiConfigItem& item, const std::string& text
             out = value;
             return true;
         }
+        if (item.value_type == "boolean") {
+            if (text == "true" || text == "1") {
+                out = true;
+                return true;
+            }
+            if (text == "false" || text == "0") {
+                out = false;
+                return true;
+            }
+            error = "Expected a boolean for " + configPathLabel(item.path);
+            return false;
+        }
     } catch (const std::exception& ex) {
         error = "Invalid value for " + configPathLabel(item.path) + ": " + ex.what();
         return false;
@@ -729,18 +714,77 @@ ShellResult executeShellCommand(const std::string& command) {
 }
 
 } // namespace
+// ---- AFS_TuiConfig -----------------------------------------------------------
+
+AFS_ConfigSchema AFS_TuiLayoutConfig::configSchema() {
+    return {
+        .module = "tui.layout",
+        .path = {"tui", "layout"},
+        .is_array = false,
+        .fields =
+            {
+                {
+                    {"sidebar_ratio", AFS_ConfigValueType::Number, false, false, 0.35},
+                },
+            },
+    };
+}
+
+void from_json(const nlohmann::json& j, AFS_TuiLayoutConfig& layout) {
+    if (j.contains("sidebar_ratio") && j["sidebar_ratio"].is_number()) {
+        layout.sidebar_ratio = j["sidebar_ratio"].get<double>();
+    }
+}
+
+void from_json(const nlohmann::json& j, AFS_TuiConfig& tui) {
+    if (j.contains("layout")) {
+        j.at("layout").get_to(tui.layout);
+    }
+}
+
+void AFS_TuiApp::registerConfigSchema() {
+    AFS_ConfigManager::instance().registerSchema(AFS_TuiLayoutConfig::configSchema());
+}
+
+std::optional<AFS_TuiConfig> AFS_TuiApp::loadConfig(const AFS_Config& config_source) {
+    AFS_TuiConfig config;
+    try {
+        const auto& root = config_source.root();
+        if (root.contains("tui")) {
+            if (!root["tui"].is_object()) return std::nullopt;
+            root.at("tui").get_to(config);
+        }
+    } catch (const nlohmann::json::exception&) {
+        return std::nullopt;
+    }
+    return config;
+}
+
+std::optional<AFS_TuiConfig> AFS_TuiApp::loadConfig(const AFS_ConfigManager& manager) {
+    return loadConfig(manager.config());
+}
+
+bool AFS_TuiApp::saveSidebarRatio(const std::filesystem::path& path, double ratio) {
+    auto& manager = AFS_ConfigManager::instance();
+    std::string error;
+    if (manager.path() != path && !manager.loadFromFile(path, error)) return false;
+    auto result = manager.updateValue({"tui", "layout", "sidebar_ratio"}, ratio);
+    if (!result.ok) return false;
+    return manager.save(error);
+}
 
 // ---- lifecycle --------------------------------------------------------------
 
 std::unique_ptr<AFS_TuiApp> AFS_TuiApp::create(const std::string& config_path) {
+    AFS_TuiApp::registerConfigSchema();
     auto bridge = AFS_TuiAgentBridge::create(config_path);
     if (!bridge) return nullptr;
 
     auto app = std::unique_ptr<AFS_TuiApp>(new AFS_TuiApp());
     app->agent_bridge_ = std::move(bridge);
     app->config_path_ = config_path;
-    if (auto config = AFS_Config::loadFromFile(config_path)) {
-        app->sidebar_ratio_ = clampSidebarRatio(config->tui().layout.sidebar_ratio);
+    if (auto config = AFS_TuiApp::loadConfig(AFS_ConfigManager::instance())) {
+        app->sidebar_ratio_ = clampSidebarRatio(config->layout.sidebar_ratio);
     }
     app->file_entries_ = buildFileEntries(currentDirectoryPath(), app->expanded_file_dirs_);
     return app;
@@ -781,9 +825,12 @@ void AFS_TuiApp::syncConfigEditBuffer() {
         selectedConfigItem(config_categories_, config_category_index_, config_item_index_);
     if (!item || !item->editable) {
         config_edit_value_.clear();
+        config_edit_cursor_position_ = 0;
         return;
     }
-    config_edit_value_ = configValueForInput(config_root_, item->path, item->value_type);
+    config_edit_value_ =
+        configValueForInput(config_root_, item->path, item->value_type, item->fallback_value);
+    config_edit_cursor_position_ = static_cast<int>(config_edit_value_.size());
 }
 
 void AFS_TuiApp::saveAndReloadConfig() {
@@ -801,30 +848,48 @@ void AFS_TuiApp::saveAndReloadConfig() {
         return;
     }
 
-    try {
-        ensureConfigValueAt(config_root_, item->path) = std::move(parsed_value);
-    } catch (const std::exception& ex) {
-        config_status_ = "Failed to update " + configPathLabel(item->path) + ": " + ex.what();
-        return;
-    }
-
-    if (item->path == std::vector<std::string>{"tui", "layout", "sidebar_ratio"}) {
-        sidebar_ratio_ =
-            clampSidebarRatio(config_root_["tui"]["layout"]["sidebar_ratio"].get<double>());
-        config_root_["tui"]["layout"]["sidebar_ratio"] = sidebar_ratio_;
-    }
-
-    if (!saveConfigJson(config_path_, config_root_, error)) {
+    auto& manager = AFS_ConfigManager::instance();
+    if (!manager.loadFromFile(config_path_, error)) {
         config_status_ = error;
         return;
     }
-    if (!agent_bridge_->reloadConfig(config_path_.string())) {
+
+    auto update = manager.updateValue(item->path, parsed_value);
+    if (!update.ok) {
+        config_status_ = update.error;
+        return;
+    }
+
+    for (const auto& module : update.affected_modules) {
+        if (module == "tui.layout" &&
+            item->path == std::vector<std::string>{"tui", "layout", "sidebar_ratio"}) {
+            sidebar_ratio_ =
+                clampSidebarRatio(manager.root()["tui"]["layout"]["sidebar_ratio"].get<double>());
+            manager.updateValue(item->path, sidebar_ratio_);
+        }
+    }
+
+    if (!manager.save(error)) {
+        config_status_ = error;
+        return;
+    }
+
+    if (!manager.applyModules(update.affected_modules, error)) {
+        config_status_ = "Config saved, but apply failed: " + error;
+        return;
+    }
+
+    bool reload_model = false;
+    for (const auto& module : update.affected_modules) {
+        if (module == "models.llms" || module == "models.embeddings") reload_model = true;
+    }
+    if (reload_model && !agent_bridge_->reloadConfig(config_path_.string())) {
         config_status_ = "Config saved, but model reload failed";
         return;
     }
 
     refreshConfigView();
-    config_status_ = "Config saved and reloaded";
+    config_status_ = reload_model ? "Config saved and model reloaded" : "Config saved";
 }
 
 void AFS_TuiApp::moveConfigSelection(int category_delta, int item_delta) {
@@ -852,9 +917,9 @@ void AFS_TuiApp::moveConfigSelection(int category_delta, int item_delta) {
 
 void AFS_TuiApp::submit() {
     if (input_.empty() || agent_bridge_->running()) return;
-
     std::string user_input = input_ == "." ? "keep going" : std::move(input_);
     input_.clear();
+    input_cursor_position_ = 0;
 
     if (!agent_bridge_->submitUserMessage(user_input)) return;
 
@@ -869,9 +934,9 @@ void AFS_TuiApp::submit() {
 void AFS_TuiApp::submitShell() {
     if (input_.empty() || shell_running_.load()) return;
     if (shell_thread_.joinable()) shell_thread_.join();
-
     std::string command = std::move(input_);
     input_.clear();
+    input_cursor_position_ = 0;
 
     {
         std::lock_guard lock(messages_mutex_);
@@ -939,10 +1004,9 @@ void AFS_TuiApp::run() {
             .context_limit = agent_bridge_->contextLimit(),
         });
     });
-
-    auto input_opt = AFS_TuiInputOption();
-    auto input_component = Input(&input_, "", input_opt);
-    auto config_edit_component = Input(&config_edit_value_, "", input_opt);
+    auto input_component = Input(&input_, "", AFS_TuiInputOption(&input_cursor_position_));
+    auto config_edit_component =
+        Input(&config_edit_value_, "", AFS_TuiInputOption(&config_edit_cursor_position_));
     int active_input_index = 0;
     auto input_tabs = Container::Tab({input_component, config_edit_component}, &active_input_index);
 
@@ -1017,6 +1081,7 @@ void AFS_TuiApp::run() {
                 if (esc_pending_) {
                     config_mode_ = false;
                     esc_pending_ = false;
+                    screen.Post(Event::Custom);
                     return true;
                 }
                 esc_pending_ = true;
@@ -1055,13 +1120,22 @@ void AFS_TuiApp::run() {
             if (event == Event::CtrlP) {
                 esc_pending_ = false;
                 config_mode_ = false;
+                screen.Post(Event::Custom);
+                return true;
+            }
+            if (AFS_TuiHandleReadlineShortcut(event, config_edit_value_,
+                                              config_edit_cursor_position_)) {
+                esc_pending_ = false;
                 return true;
             }
             return false;
         }
-
-        if (!shell_mode_ &&
-            handleFileCandidateKey(event, input_, file_candidate_query_, file_candidate_index_)) {
+        if (!shell_mode_ && handleFileCandidateKey(event, input_, file_candidate_query_,
+                                                   file_candidate_index_, input_cursor_position_)) {
+            esc_pending_ = false;
+            return true;
+        }
+        if (AFS_TuiHandleReadlineShortcut(event, input_, input_cursor_position_)) {
             esc_pending_ = false;
             return true;
         }
@@ -1078,7 +1152,8 @@ void AFS_TuiApp::run() {
                 esc_pending_ = true;
                 return true;
             case AFS_TuiKeyAction::InsertNewline:
-                input_ += '\n';
+                input_.insert(static_cast<std::size_t>(input_cursor_position_), "\n");
+                ++input_cursor_position_;
                 return true;
             case AFS_TuiKeyAction::ToggleShellMode:
                 shell_mode_ = !shell_mode_;
@@ -1098,21 +1173,48 @@ void AFS_TuiApp::run() {
                 esc_pending_ = false;
                 file_candidate_query_.clear();
                 file_candidate_index_ = 0;
+                screen.Post(Event::Custom);
                 return true;
             case AFS_TuiKeyAction::SaveConfig:
                 saveAndReloadConfig();
                 esc_pending_ = false;
                 return true;
-            case AFS_TuiKeyAction::Scroll:
-                scroll_position_ =
-                    std::clamp(scroll_position_ + key_action->scroll_delta, 0, kScrollBottom);
+            case AFS_TuiKeyAction::Scroll: {
+                int dimy = Terminal::Size().dimy;
+                int frame_lines = std::max(1, dimy - 3);
+                int content_lines;
+                {
+                    std::lock_guard lock(messages_mutex_);
+                    content_lines =
+                        std::max(frame_lines + 1, static_cast<int>(messages_.size()) * 3);
+                }
+                int page_units = 1000 * frame_lines / content_lines;
+                int max_delta = std::max(1, page_units * 8 / 10);
+
+                int delta;
+                if (event == Event::PageUp) {
+                    delta = -max_delta;
+                } else if (event == Event::PageDown) {
+                    delta = max_delta;
+                } else if (event == Event::ArrowUp || event == Event::ArrowDown) {
+                    int line_step = std::max(1, page_units / 6);
+                    delta = event == Event::ArrowUp ? -line_step : line_step;
+                } else {
+                    delta = key_action->scroll_delta;
+                    if (delta > 0)
+                        delta = std::min(delta, max_delta);
+                    else if (delta < 0)
+                        delta = std::max(delta, -max_delta);
+                }
+
+                scroll_position_ = std::clamp(scroll_position_ + delta, 0, kScrollBottom);
                 follow_latest_ = scroll_position_ == kScrollBottom;
                 return true;
+            }
             case AFS_TuiKeyAction::CancelExitConfirmation:
                 return false;
             }
         }
-
         if (handleSidebarResize(event, Terminal::Size().dimx, sidebar_splitter_box_, config_path_,
                                 sidebar_ratio_, resizing_sidebar_)) {
             return true;
@@ -1134,6 +1236,7 @@ void AFS_TuiApp::run() {
 
         if (sidebar_mode_ == AFS_TuiSidebarMode::Files &&
             handleFileEntryRightClick(event, file_entries_, input_)) {
+            input_cursor_position_ = static_cast<int>(input_.size());
             esc_pending_ = false;
             return true;
         }
@@ -1141,6 +1244,27 @@ void AFS_TuiApp::run() {
         if (sidebar_mode_ == AFS_TuiSidebarMode::QuickIndex &&
             handleQuickIndexClick(event, quick_index_entries_, scroll_position_, follow_latest_)) {
             return true;
+        }
+
+        // 鼠标滚轮：动态计算步长
+        if (event.is_mouse()) {
+            auto& mouse = event.mouse();
+            if (mouse.button == Mouse::WheelUp || mouse.button == Mouse::WheelDown) {
+                int dimy = Terminal::Size().dimy;
+                int frame_lines = std::max(1, dimy - 3);
+                int content_lines;
+                {
+                    std::lock_guard lock(messages_mutex_);
+                    content_lines =
+                        std::max(frame_lines + 1, static_cast<int>(messages_.size()) * 3);
+                }
+                int page_units = 1000 * frame_lines / content_lines;
+                int line_step = std::max(1, page_units / 6);
+                int delta = mouse.button == Mouse::WheelUp ? -line_step : line_step;
+                scroll_position_ = std::clamp(scroll_position_ + delta, 0, kScrollBottom);
+                follow_latest_ = scroll_position_ == kScrollBottom;
+                return true;
+            }
         }
 
         if (AFS_TuiHandleScrollEvent(event, scroll_position_, follow_latest_)) return true;

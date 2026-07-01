@@ -9,6 +9,35 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
+
+// ---- AFS_ModelConfig ---------------------------------------------------------
+// 单个模型配置条目：可用于 LLM 或 embedding 模型。
+struct AFS_ModelConfig {
+    std::string name;
+    std::string base_url;
+    std::string api_key;
+    std::string model;
+    std::size_t context_limit = 0; // 0 = 无限制
+
+    static AFS_ConfigSchema configSchema(const std::vector<std::string>& path,
+                                         const std::string& module);
+};
+
+// ---- AFS_ModelsConfig --------------------------------------------------------
+// 模型分组配置：LLM 列表和 embedding 模型列表。
+struct AFS_ModelsConfig {
+    std::vector<AFS_ModelConfig> llms;
+    std::vector<AFS_ModelConfig> embeddings;
+};
+
+void from_json(const nlohmann::json& j, AFS_ModelConfig& cfg);
+void from_json(const nlohmann::json& j, AFS_ModelsConfig& models);
+
+void AFS_RegisterModelConfigSchemas();
+std::optional<AFS_ModelsConfig> AFS_LoadModelsConfig(const AFS_Config& config);
+std::optional<AFS_ModelsConfig> AFS_LoadModelsConfig(const AFS_ConfigManager& manager);
+std::optional<AFS_ModelsConfig> AFS_LoadModelsConfig();
 
 // ---- AFS_Model ---------------------------------------------------------------
 // 模型抽象基类：不可变，由配置创建，创建后内容不可修改。
@@ -18,6 +47,11 @@ class AFS_Model {
     using ChatStreamCallback = std::function<bool(const nlohmann::json& chunk)>;
 
     virtual ~AFS_Model() = default;
+    // ---- config schema ------------------------------------------------------
+    static AFS_ConfigSchema configSchema(const std::vector<std::string>& path,
+                                         const std::string& module) {
+        return AFS_ModelConfig::configSchema(path, module);
+    }
 
     // ---- type identity -------------------------------------------------------
     virtual std::string_view modelType() const = 0;

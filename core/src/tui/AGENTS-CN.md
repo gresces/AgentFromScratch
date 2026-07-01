@@ -29,12 +29,12 @@
 
 | 快捷键 | 行为 |
 |--------|------|
-| `←` / `→` | 切换配置分类（`models.llms`、`models.embeddings`、`tui.layout`） |
+| `←` / `→` | 切换已注册配置分类（如 `models.llms`、`models.embeddings`、`tui.layout`、插件 schema） |
 | `↑` / `↓` | 切换当前分类下的可编辑配置项 |
 
 ### 保存
 
-- `Enter` / `Ctrl+S`：解析当前选中配置项输入框的内容，写回配置文件，保存到磁盘，并通知 Agent 桥接层重载模型配置
+- `Enter` / `Ctrl+S`：解析当前选中配置项输入框的内容，通过 `AFS_ConfigManager::updateValue()` 写回 JSON，保存到磁盘，并按受影响模块决定是否重载模型配置
 - 保存后状态栏显示操作结果（成功 / 失败原因）；`tui.layout.sidebar_ratio` 保存时会按运行时范围钳制
 
 ### 布局
@@ -61,9 +61,9 @@
 
 ### 实现
 
-- `AFS_TuiApp::refreshConfigView()`：读取配置文件 → 按 `basic/config` 中的结构化选项构建 `models.llms`、`models.embeddings`、`tui.layout` 分类 → 同步当前项输入框
-- `AFS_TuiApp::syncConfigEditBuffer()`：根据当前选中项路径读取 JSON 标量值并填充输入框
-- `AFS_TuiApp::saveAndReloadConfig()`：解析当前输入框 → 写回选中 JSON 路径 → 保存到磁盘 → 通知 `agent_bridge_->reloadConfig()`
+- `AFS_TuiApp::registerConfigSchema()`：注册 TUI 自有 `tui.layout` schema；模型和插件 schema 由各自模块注册
+- `AFS_TuiApp::refreshConfigView()`：读取配置文件 → 遍历 `AFS_ConfigManager::schemas()` 构建分类和配置项 → 同步当前项输入框
+- `AFS_TuiApp::saveAndReloadConfig()`：解析当前输入框 → 写回选中 JSON 路径 → 保存到磁盘 → 按受影响模块应用配置；模型配置变更会通知 `agent_bridge_->reloadConfig()`
 - `AFS_TuiApp::moveConfigSelection(dc, di)`：按 delta 移动分类/项目索引，自动 clamp 到有效范围，并同步输入框
 - 渲染由 `AFS_TuiRenderConfigMode(const AFS_TuiConfigView&, Component)` 完成，位于 `layout/layout.cc`
   渲染时若 `config_mode_` 为 true，主渲染 lambda 直接返回配置视图，跳过消息区和普通输入栏
@@ -91,8 +91,8 @@ class AFS_TuiApp {
     void submit();       // Agent 模式：写入上下文并运行 Agent
     void submitShell();  // Shell 模式：执行 /bin/bash -lc，不写入上下文
     void pollEvents();
-    void refreshConfigView();       // 加载配置文件到配置视图
-    void saveAndReloadConfig();     // 保存 sidebar_ratio 并重载模型配置
+    void refreshConfigView();       // 加载配置文件到动态配置视图
+    void saveAndReloadConfig();     // 保存当前配置项并按受影响模块重载
     void moveConfigSelection(int category_delta, int item_delta);
 
     std::unique_ptr<AFS_TuiAgentBridge> agent_bridge_;
@@ -170,8 +170,7 @@ echo hello                                             │ Quick index
 - Quick index 只列出用户输入；鼠标点击条目会把消息区滚动到对应用户消息附近。
 - Agent 模式下输入以 `@` 开头时，输入栏下方显示最多 6 个文件路径候选；`↑` / `↓` 移动高亮，`Tab` 将当前高亮候选写入输入栏且不切换 Shell 模式。
 - Agent 模式下输入单个 `.` 并提交时，实际发送 `keep going`。
-- 输入栏不使用反转背景，不显示下划线。
-- Assistant 消息正文不显示 `[assistant]` 前缀；role 只出现在 `-- assistant ----` header。
+- 输入栏通过独立 `cursor_position` 引用交给 FTXUI `Input` 组件渲染真实光标位置；聚焦时文字加粗，未聚焦时文本灰化（`dim`），不显示反转背景或下划线。
 - Tool 消息正文不显示 `[tool call_id=...]` 前缀；`call_id=...` 放入 `-- tool call_id=... ----` header。
 - Header 中只有 role 名称使用角色颜色和加粗；`call_id=...` 等 detail 使用 dim，不突出显示。
 
@@ -212,10 +211,14 @@ main_component (Renderer + CatchEvent)
 | `Esc` | 第一次进入退出确认，状态栏提示 `Press Esc again to exit` |
 | `Esc` 再按一次 | `screen.Exit()` 退出程序 |
 | 任意普通按键 | 取消退出确认 |
-| `↑` / `↓` | 文件候选激活时移动高亮；否则消息区上/下滚动 |
-| `PageUp` / `PageDown` | 消息区翻页滚动 |
-| 鼠标滚轮 | 消息区滚动 |
-| `Ctrl+P` | 打开配置模式；配置模式下返回聊天界面 |
+| `↑` / `↓` | 文件候选激活时移动高亮；否则消息区逐行滚动（增量 = 页面高度 / 6，根据终端高度和消息数量动态计算） |
+| `PageUp` / `PageDown` | 消息区翻页滚动（增量 = 80% 页面高度，根据终端高度和消息数量动态计算） |
+| 鼠标滚轮 | 消息区滚动（步长 = 页面高度 / 6，根据终端高度和消息数量动态计算） |
+| `Ctrl+A` / `Ctrl+E` | 移动输入光标到当前行首 / 行尾 |
+| `Ctrl+B` / `Ctrl+F` | 输入光标左移 / 右移一个字符 |
+| `Ctrl+W` | 删除输入光标前一个单词 |
+| `Ctrl+U` / `Ctrl+K` | 删除当前行中光标前 / 光标后的内容 |
+| `Ctrl+D` | 删除输入光标处的字符 |
 | `Ctrl+S` | 配置模式下保存并重载配置 |
 
 
@@ -264,9 +267,7 @@ Shell 模式约束：
 
 ## 自动跟滚
 
-新消息到达时，若 `follow_latest_` 为 true，渲染时通过 `focusPositionRelative(0.0F, 1.0F)` 跟随到底部。用户手动上滚会关闭跟滚；继续向下滚到底部会重新开启跟滚。`scroll_position_` 是 0..1000 的相对位置，不再使用消息条数作为 FTXUI 坐标。
-
-## 退出
+新消息到达时，若 `follow_latest_` 为 true，渲染时通过 `focusPositionRelative(0.0F, 1.0F)` 跟随到底部。用户手动上滚会关闭跟滚；继续向下滚到底部会重新开启跟滚。`scroll_position_` 是 0..1000 的相对位置。
 
 按 `Esc` → 状态栏显示黄色 `Press Esc again to exit` → 再按 `Esc` → `screen.Exit()` → 停止轮询线程并返回。任意普通按键取消退出确认。
 
@@ -274,8 +275,8 @@ Shell 模式约束：
 
 - `ftxui`：终端 UI 框架
 - `core/src/basic/log/logger.hh`：事件缓冲和轮询
-- `core/src/agent/agent.hh`：Agent 核心
-- `core/src/basic/config/config.hh` / `core/src/basic/models/model.hh`：模型配置和创建
+- `core/src/basic/config/config.hh`：动态配置管理器和 schema 注册类型
+- `core/src/basic/models/model.hh`：模型配置结构和模型创建
 - `core/src/plugins/plugin_manager.hh`：插件加载
 
 ## 约定
@@ -284,8 +285,8 @@ Shell 模式约束：
 - TUI 不直接访问 Loop 内部；Agent 运行状态和消息事件经 `AFS_TuiAgentBridge` / `AFS_Logger::poll()` 传递。
 - FTXUI 滚动基于 `frame` + `focusPosition` + `vscroll_indicator`。
 - 输入栏 `multiline = true` 只用于显示和保存换行；提交由外层 `CatchEvent` 接管。
-- 输入栏通过 `InputOption::transform` 去除反转背景，不使用 underline。
-- 新增 TUI 功能优先放入现有子模块；不要把布局、输入事件、Agent 交互逻辑塞回单个大函数。
+- 输入栏和配置编辑框分别持有独立 cursor position，并通过 `AFS_TuiInputOption(&cursor)` 传入 FTXUI `InputOption::cursor_position`；不要用外层 cursor decorator 伪造光标，否则多行输入时位置会偏移。
+- 滚动增量由 `app.cc` 根据终端高度和消息数量动态计算（`page_units = 1000 * frame_lines / content_lines`）。PageUp/PageDown 使用 `±(page_units * 0.8)`，ArrowUp/ArrowDown 和鼠标滚轮使用 `±(page_units / 6)`。`input.cc` 仅做 0..1000 范围裁剪。
 
 ### 配置模式组件树
 

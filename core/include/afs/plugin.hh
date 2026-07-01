@@ -55,5 +55,11 @@ class Plugin {
 using AbiVersionFn = std::uint32_t (*)();
 using CreateFn = Plugin* (*)();
 using DestroyFn = void (*)(Plugin*);
+// 可选导出：插件可提供 JSON 数组描述自身配置结构；宿主通过 dlsym 探测，
+// 不要求旧插件实现，保持向后兼容。
+// 建议 JSON 形状：
+// [{"module":"plugin.tool.example","path":["plugins","tool","example"],"is_array":false,
+//   "fields":[{"name":"enabled","type":"boolean","required":false}]}]
+using ConfigSchemasFn = const char* (*)();
 
 } // namespace AFS

@@ -31,7 +31,7 @@ class AFS_TuiAgentBridge {
 ```
 create(config)
   ├── AFS_Logger::init()
-  ├── AFS_Config::loadFromFile(config)
+  ├── AFS_RegisterModelConfigSchemas() + AFS_ConfigManager::loadFromFile(config)
   ├── AFS_PluginManager::loadFromDirectory(AFS_DefaultPluginDirectory())
   ├── AFS_Agent::createMain()
   ├── agent->setModel(createModel(...))

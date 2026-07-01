@@ -41,6 +41,7 @@ class AFS_Agent {
     void setModel(std::unique_ptr<AFS_Model> model);
 
     // 运行 Agent 循环：使用当前上下文和模型与 LLM 交互直到获得最终回复。
+    void setLoopConfig(AFS_AgentLoopConfig config);
     std::string run();
 
     // ---- tree mutation ------------------------------------------------------

@@ -9,7 +9,7 @@
 | `plugin_loader.hh` | `AFS_LoadedPlugin` RAII 封装 |
 | `plugin_loader.cc` | `dlopen`/`dlsym`/`dlclose` |
 | `plugin_manager.hh` | `AFS_PluginManager` 单例 |
-| `plugin_manager.cc` | 目录扫描、命名解析、引用计数 |
+| `plugin_manager.cc` | 目录扫描、命名解析、引用计数、插件可选配置 schema 注册 |
 
 ## `AFS_PluginManager`
 
@@ -24,6 +24,26 @@
 | `allToolCaps()` | 获取所有已加载工具插件的 `ToolCap` 列表 |
 | `toolCaps(type, name)` | 获取指定插件的 `ToolCap` 列表 |
 | `loadedToolPlugins()` | 获取所有已加载工具插件的 `(type, name)` 列表 |
+
+
+## 配置 schema 扩展
+
+插件可以选择导出 `pluginConfigSchemas` C 符号，返回 JSON 数组字符串。宿主通过 `dlsym` 探测该符号；旧插件不导出也能继续加载。
+
+```json
+[
+  {
+    "module": "plugin.tool.example",
+    "path": ["plugins", "tool", "example"],
+    "is_array": false,
+    "fields": [
+      {"name": "enabled", "type": "boolean", "required": false, "default": true}
+    ]
+  }
+]
+```
+
+加载插件时，`AFS_PluginManager` 会把该 schema 注册进 `AFS_ConfigManager`，TUI 配置页按注册结果自动显示可编辑字段。
 
 ## 引用计数
 

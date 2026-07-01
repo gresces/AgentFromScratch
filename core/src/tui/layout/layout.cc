@@ -156,16 +156,20 @@ Element configDetail(const AFS_TuiConfigView& view, Component edit_component) {
 
 } // namespace
 
-InputOption AFS_TuiInputOption() {
+InputOption AFS_TuiInputOption(int* cursor_position) {
     InputOption input_opt;
     input_opt.multiline = true;
+    input_opt.cursor_position = cursor_position;
     input_opt.transform = [](InputState state) {
-        state.element |= dim;
+        if (state.focused) {
+            state.element |= bold;
+        } else {
+            state.element |= dim;
+        }
         return state.element;
     };
     return input_opt;
 }
-
 Element AFS_TuiRenderStatus(const AFS_TuiStatusView& view) {
     if (view.esc_pending) {
         return text(" Press Esc again to exit") | color(Color::Yellow) | bold | hcenter;

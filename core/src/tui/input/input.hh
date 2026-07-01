@@ -23,6 +23,11 @@ bool AFS_TuiIsMultilineShortcut(const ftxui::Event& event);
 // Return true when an event should cancel the "press Esc again to exit" state.
 bool AFS_TuiCancelsExitConfirmation(const ftxui::Event& event);
 
+// Apply readline-style editing shortcuts to the given input buffer and cursor.
+// Returns true when the event was consumed.
+bool AFS_TuiHandleReadlineShortcut(const ftxui::Event& event, std::string& input,
+                                   int& cursor_position);
+
 // Apply mouse/keyboard scrolling. Returns true when the event was consumed.
 // scroll_position is a 0..1000 relative position for the message frame.
 bool AFS_TuiHandleScrollEvent(ftxui::Event event, int& scroll_position, bool& follow_latest);
